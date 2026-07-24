@@ -43,7 +43,7 @@ func (s Server) ListenAndServe() error {
 	r.Use(compressor.Handler)
 
 	// Создаём объект аутентификации
-	guard := auth.New("s.cfg.JwtToken", s.db)
+	guard := auth.New(s.cfg.JwtToken)
 
 	// Создаём обработчик запросов
 	h := handler.New(s.log, s.db)
@@ -55,7 +55,7 @@ func (s Server) ListenAndServe() error {
 			r.Use(middleware.AllowContentType("application/json"))
 
 			// Регистрация
-			r.Post("/register", h.Register)
+			r.Post("/register", h.Register(guard))
 
 		},
 	))

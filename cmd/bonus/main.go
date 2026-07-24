@@ -11,7 +11,6 @@ import (
 	"github.com/alexsey-popov/gmart-bonus/internal/config"
 	"github.com/alexsey-popov/gmart-bonus/internal/server"
 	"github.com/golang-migrate/migrate/v4"
-
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -26,17 +25,29 @@ func main() {
 	// Парсим флаги(os.Args[0] пропускаем т.к. это имя исполняемого файла) и env
 	cfg, err := config.Parse(os.Args[1:], os.LookupEnv)
 	if err != nil {
-		log.Error(err.Error())
+		log.Error(err.Error(),
+			slog.Any("error", err),
+		)
 		panic(err)
 	}
 
 	// Создаём объект взаимодействия с базой
-	db, err := connectDB(cfg.DatabaseURI)
+	db, err := sqlx.Connect("pgx", cfg.DatabaseURI)
 	if err != nil {
-		log.Error(err.Error())
+		log.Error("ошибка при подключении к БД",
+			slog.Any("error", err),
+		)
 		panic(err)
 	}
 	defer db.Close()
+
+	// Выполняем миграции БД
+	if err = migrateUp(db); err != nil {
+		log.Error(err.Error(),
+			slog.Any("error", err),
+		)
+		panic(err)
+	}
 
 	// Сервер программы лояльности
 	s := server.NewServer(cfg, log, db)
@@ -47,18 +58,12 @@ func main() {
 
 }
 
-// connectDB - Подключение в БД и выполнение миграций
-func connectDB(serverDSN string) (*sqlx.DB, error) {
-	// Создаём объект взаимодействия с базой
-	db, err := sqlx.Connect("pgx", serverDSN)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка при подключении к БД: %w", err)
-	}
-
+// migrateUp Выполнение миграций БД
+func migrateUp(db *sqlx.DB) error {
 	// Создаём драйвер для миграций
 	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
 	if err != nil {
-		return db, fmt.Errorf("ошибка при создании драйвера БД: %w", err)
+		return fmt.Errorf("ошибка при создании драйвера БД: %w", err)
 	}
 
 	//   Создаём объект миграции на основе файлов с миграциями и подключения
@@ -66,15 +71,15 @@ func connectDB(serverDSN string) (*sqlx.DB, error) {
 		"file://migrations",
 		"pgx", driver)
 	if err != nil {
-		return db, fmt.Errorf("ошибка при подготовке к миграций БД: %w", err)
+		return fmt.Errorf("ошибка при подготовке к миграций БД: %w", err)
 	}
 
 	// Проводим миграции
 	err = m.Up()
 	// Ошибку migrate.ErrNoChange пропускаем
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return db, fmt.Errorf("ошибка при запуске миграций БД: %w", err)
+		return fmt.Errorf("ошибка при запуске миграций БД: %w", err)
 	}
 
-	return db, nil
+	return nil
 }

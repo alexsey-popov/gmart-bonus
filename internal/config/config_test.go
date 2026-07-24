@@ -24,6 +24,7 @@ func TestParse(t *testing.T) {
 				UserAddress:    DefaultUserAddress,
 				DatabaseURI:    DefaultDatabaseURI,
 				AccrualAddress: DefaultAccrualAddress,
+				JwtToken:       DefaultJwtToken,
 			},
 		},
 		{
@@ -33,12 +34,14 @@ func TestParse(t *testing.T) {
 				EnvUserAddress:    "localhost:1111",
 				EnvDatabaseURI:    "database",
 				EnvAccrualAddress: "localhost:2222",
+				EnvJwtToken:       "env token",
 			},
 			success: true,
 			want: &Config{
 				UserAddress:    "localhost:1111",
 				DatabaseURI:    "database",
 				AccrualAddress: "localhost:2222",
+				JwtToken:       "env token",
 			},
 		},
 		{
@@ -47,6 +50,7 @@ func TestParse(t *testing.T) {
 				"-" + FlagUserAddress, "localhost:3333",
 				"-" + FlagDatabaseURI, "different_database",
 				"-" + FlagAccrualAddress, "localhost:4444",
+				"-" + FlagJwtToken, "flag token",
 			},
 			env:     make(map[string]string),
 			success: true,
@@ -54,6 +58,7 @@ func TestParse(t *testing.T) {
 				UserAddress:    "localhost:3333",
 				DatabaseURI:    "different_database",
 				AccrualAddress: "localhost:4444",
+				JwtToken:       "flag token",
 			},
 		},
 		{
@@ -62,17 +67,20 @@ func TestParse(t *testing.T) {
 				"-" + FlagUserAddress, "localhost:3333",
 				"-" + FlagDatabaseURI, "different_database",
 				"-" + FlagAccrualAddress, "localhost:4444",
+				"-" + FlagJwtToken, "flag token",
 			},
 			env: map[string]string{
 				EnvUserAddress:    "localhost:1111",
 				EnvDatabaseURI:    "database",
 				EnvAccrualAddress: "localhost:2222",
+				EnvJwtToken:       "env token",
 			},
 			success: true,
 			want: &Config{
 				UserAddress:    "localhost:3333",
 				DatabaseURI:    "different_database",
 				AccrualAddress: "localhost:4444",
+				JwtToken:       "flag token",
 			},
 		},
 		{

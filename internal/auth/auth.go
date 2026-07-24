@@ -2,25 +2,49 @@
 package auth
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/jwtauth/v5"
-	"github.com/jmoiron/sqlx"
 )
+
+// TokenExpDuration Длительность жизни токена
+const TokenExpDuration = 7 * 24 * time.Hour
 
 // Guard Объект для реализации аутентификации
 type Guard struct {
-	token *jwtauth.JWTAuth
-	db    *sqlx.DB
+	jwt *jwtauth.JWTAuth
 }
 
 // New Создание нового объекта аутентификации
-func New(secret string, db *sqlx.DB) Guard {
-	return Guard{
-		token: jwtauth.New("HS256", []byte(secret), nil),
-		db:    db,
+func New(secret string) *Guard {
+	return &Guard{
+		jwt: jwtauth.New("HS256", []byte(secret), nil),
 	}
+}
+
+// NewUserToken Создание нового токена пользователя
+func (g Guard) NewUserToken(userId string) (string, time.Time, error) {
+	// Данные пользователя (Claims)
+	claims := map[string]interface{}{
+		"user_id": userId,
+	}
+
+	// Устанавливаем время жизни токена
+	jwtauth.SetExpiry(claims, time.Now().Add(TokenExpDuration))
+
+	// Генерируем и подписываем токен
+	token, tokenString, err := g.jwt.Encode(claims)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("ошибка при создании токена пользователя: %w", err)
+	}
+
+	// Момент окончания действия токена
+	expiredAt, _ := token.Expiration()
+
+	return tokenString, expiredAt, nil
 }
 
 // GuestMiddleware Доступ только для неаутентифицированных пользователей
@@ -44,7 +68,7 @@ func (g Guard) GuestMiddleware(h http.Handler) http.Handler {
 func (g Guard) GuestGroup(routes func(r chi.Router)) func(r chi.Router) {
 	return func(r chi.Router) {
 		// Ищем токен пользователя и пробрасываем его в контекст
-		r.Use(jwtauth.Verifier(g.token))
+		r.Use(jwtauth.Verifier(g.jwt))
 
 		// Доступ только для неаутентифицированных пользователей
 		r.Use(g.GuestMiddleware)
@@ -57,10 +81,10 @@ func (g Guard) GuestGroup(routes func(r chi.Router)) func(r chi.Router) {
 func (g Guard) AuthGroup(routes func(r chi.Router)) func(r chi.Router) {
 	return func(r chi.Router) {
 		// Ищем токен пользователя и пробрасываем его в контекст
-		r.Use(jwtauth.Verifier(g.token))
+		r.Use(jwtauth.Verifier(g.jwt))
 
 		// Доступ только для аутентифицированных пользователей
-		r.Use(jwtauth.Authenticator(g.token))
+		r.Use(jwtauth.Authenticator(g.jwt))
 
 		r.Group(routes)
 	}

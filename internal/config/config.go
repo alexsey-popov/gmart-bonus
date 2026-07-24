@@ -21,6 +21,11 @@ const (
 	FlagAccrualAddress    = "r"
 	EnvAccrualAddress     = "ACCRUAL_SYSTEM_ADDRESS"
 	DefaultAccrualAddress = "localhost:8081"
+
+	// Токен проверки аутентификации
+	FlagJwtToken    = "j"
+	EnvJwtToken     = "JWT_TOKEN"
+	DefaultJwtToken = "super secret token"
 )
 
 // Config - Структура конфигурации сервера
@@ -28,6 +33,7 @@ type Config struct {
 	UserAddress    string
 	DatabaseURI    string
 	AccrualAddress string
+	JwtToken       string
 }
 
 // EnvLookupFunc заглушка для `os.LookupEnv`
@@ -52,11 +58,13 @@ func Parse(args []string, lookupFunc EnvLookupFunc) (*Config, error) {
 	userAddress := getEnvString(lookupFunc, EnvUserAddress, DefaultUserAddress)
 	databaseURI := getEnvString(lookupFunc, EnvDatabaseURI, DefaultDatabaseURI)
 	accrualAddress := getEnvString(lookupFunc, EnvAccrualAddress, DefaultAccrualAddress)
+	jwtToken := getEnvString(lookupFunc, EnvJwtToken, DefaultJwtToken)
 
 	// Получаем данные из флагов
 	fs.StringVar(&cfg.UserAddress, FlagUserAddress, userAddress, "Адрес системы программы лояльности")
 	fs.StringVar(&cfg.DatabaseURI, FlagDatabaseURI, databaseURI, "Адрес подключения к базе данных")
 	fs.StringVar(&cfg.AccrualAddress, FlagAccrualAddress, accrualAddress, "Адрес системы расчёта начислений")
+	fs.StringVar(&cfg.JwtToken, FlagJwtToken, jwtToken, "Токен проверки аутентификации пользователей")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("ошибка при парсинге флагов: %w", err)

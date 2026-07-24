@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/alexsey-popov/gmart-bonus/internal/auth"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -49,60 +50,78 @@ func (h Handler) Validate(s any, fields map[string]string) error {
 }
 
 // Register Регистрация нового пользователя
-func (h Handler) Register(w http.ResponseWriter, r *http.Request) {
-	// Структура запроса
-	var req struct {
-		Login    string `json:"login" validate:"required,min=3,max=255"`
-		Password string `json:"password" validate:"required,min=3,max=255"`
-	}
+func (h Handler) Register(guard *auth.Guard) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Структура запроса
+		var req struct {
+			Login    string `json:"login" validate:"required,min=3,max=255"`
+			Password string `json:"password" validate:"required,min=3,max=255"`
+		}
 
-	// Парсим данные
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Переводы полей структуры
-	fields := map[string]string{
-		"login":    "Логин",
-		"password": "Пароль",
-	}
-
-	// Валидируем данные
-	if err := h.Validate(req, fields); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Хешируем пароль
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		h.log.Error("ошибка при хешировании пароля", slog.Any("error", err))
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
-	// Добавляем нового пользователя в БД
-	query := `INSERT INTO users (login, password) VALUES ($1, $2) RETURNING id`
-
-	var userID string
-	err = h.db.QueryRow(query, req.Login, string(hashedPassword)).Scan(&userID)
-	if err != nil {
-		// Если произошла ошибка уникальности по полю login - выводим соответствующую ошибку
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == "idx_users_login_unique" {
-			http.Error(w, http.StatusText(http.StatusConflict), http.StatusConflict)
+		// Парсим данные
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		h.log.Error("ошибка при создании нового пользователя в БД", slog.Any("error", err))
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
+		// Переводы полей структуры
+		fields := map[string]string{
+			"login":    "Логин",
+			"password": "Пароль",
+		}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"id":    userID,
-		"login": req.Login,
-	})
+		// Валидируем данные
+		if err := h.Validate(req, fields); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Хешируем пароль
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			h.log.Error("ошибка при хешировании пароля", slog.Any("error", err))
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		// Добавляем нового пользователя в БД
+		query := `INSERT INTO users (login, password) VALUES ($1, $2) RETURNING id`
+
+		var userID string
+		err = h.db.QueryRow(query, req.Login, string(hashedPassword)).Scan(&userID)
+		if err != nil {
+			// Если произошла ошибка уникальности по полю login - выводим соответствующую ошибку
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == "idx_users_login_unique" {
+				http.Error(w, http.StatusText(http.StatusConflict), http.StatusConflict)
+				return
+			}
+
+			h.log.Error("ошибка при создании нового пользователя в БД", slog.Any("error", err))
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		token, expiredAt, err := guard.NewUserToken(userID)
+		if err != nil {
+			h.log.Error(err.Error(), slog.Any("error", err))
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     "jwt",
+			Value:    token,
+			Expires:  expiredAt,
+			Path:     "/",                     // Действие куки распространяется с корня сайта
+			HttpOnly: true,                    // закрывает доступ к куке из JavaScript
+			SameSite: http.SameSiteStrictMode, // защита от CSRF атак
+		})
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":    userID,
+			"login": req.Login,
+		})
+	}
 }
