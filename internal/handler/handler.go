@@ -1,4 +1,4 @@
-// Пакет содержащий обработчик http запросов для сервиса программы поляльности
+// Пакет содержащий обработчик http запросов для сервиса программы лояльности
 package handler
 
 import (
@@ -131,21 +131,19 @@ func (h Handler) Login(guard *auth.Guard) func(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		// Хешируем пароль
-		hashedPassword, err := guard.GetHash(req.Password)
+		// Проверяем наличие пользователя в БД
+		query := `SELECT id, password FROM users WHERE login = $1`
+
+		var userID, storedPassword string
+		err := h.db.QueryRow(query, req.Login).Scan(&userID, &storedPassword)
 		if err != nil {
-			h.log.Error(err.Error(), slog.Any("error", err))
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			http.Error(w, "Некорректный логин или пароль", http.StatusUnauthorized)
 			return
 		}
 
-		// Добавляем нового пользователя в БД
-		query := `SELECT id FROM users WHERE login = $1 and password = $2`
-
-		var userID string
-		err = h.db.QueryRow(query, req.Login, hashedPassword).Scan(&userID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized) //"Некорректный логин или пароль"
+		// Сверяем пароль с хешем из БД
+		if !guard.CheckPassword(req.Password, storedPassword) {
+			http.Error(w, "Некорректный логин или пароль", http.StatusUnauthorized)
 			return
 		}
 

@@ -36,6 +36,12 @@ func (g Guard) GetHash(s string) (string, error) {
 	return string(hash), nil
 }
 
+// CheckPassword Проверка соответствия строки хешу
+func (g Guard) CheckPassword(s, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(s))
+	return err == nil
+}
+
 // NewUserToken Создание нового токена пользователя
 func (g Guard) NewUserToken(userId string) (string, time.Time, error) {
 	// Данные пользователя (Claims)
