@@ -6,57 +6,48 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"reflect"
-	"strings"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/auth"
-	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // Handler Обработчик запросов сервиса программы лояльности
 type Handler struct {
 	log       *slog.Logger
 	db        *sqlx.DB
-	validator *validator.Validate
+	validator *Validator
+}
+
+// LoginRequest Структура данных для аутентификации пользователя
+type LoginRequest struct {
+	Login    string `json:"login" validate:"required,min=3,max=255" label:"Логин"`
+	Password string `json:"password" validate:"required,min=3,max=255" label:"Пароль"`
 }
 
 // New Создание нового обработчика
 func New(log *slog.Logger, db *sqlx.DB) Handler {
+
+	v, err := NewValidator()
+	// Ошибка при создании валидатора не является критичной,
+	// поэтому не прокидываем ошибку выше, а просто логируем её
+	if err != nil {
+		log.Error(err.Error(), slog.Any("error", err))
+	}
+
 	return Handler{
 		log:       log,
 		db:        db,
-		validator: validator.New(),
+		validator: v,
 	}
-}
-
-// TranslateFields Валидация структуры с переводом полей
-func (h Handler) Validate(s any, fields map[string]string) error {
-
-	h.validator.RegisterTagNameFunc(func(fld reflect.StructField) string {
-		name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
-
-		if translate, ok := fields[name]; ok {
-			name = translate
-		}
-
-		return name
-	})
-
-	return h.validator.Struct(s)
 }
 
 // Register Регистрация нового пользователя
 func (h Handler) Register(guard *auth.Guard) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Структура запроса
-		var req struct {
-			Login    string `json:"login" validate:"required,min=3,max=255"`
-			Password string `json:"password" validate:"required,min=3,max=255"`
-		}
+		// Создаём переменную для данных запроса
+		var req LoginRequest
 
 		// Парсим данные
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -64,22 +55,16 @@ func (h Handler) Register(guard *auth.Guard) func(w http.ResponseWriter, r *http
 			return
 		}
 
-		// Переводы полей структуры
-		fields := map[string]string{
-			"login":    "Логин",
-			"password": "Пароль",
-		}
-
 		// Валидируем данные
-		if err := h.Validate(req, fields); err != nil {
+		if err := h.validator.Validate(req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		// Хешируем пароль
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		hashedPassword, err := guard.GetHash(req.Password)
 		if err != nil {
-			h.log.Error("ошибка при хешировании пароля", slog.Any("error", err))
+			h.log.Error(err.Error(), slog.Any("error", err))
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -88,7 +73,7 @@ func (h Handler) Register(guard *auth.Guard) func(w http.ResponseWriter, r *http
 		query := `INSERT INTO users (login, password) VALUES ($1, $2) RETURNING id`
 
 		var userID string
-		err = h.db.QueryRow(query, req.Login, string(hashedPassword)).Scan(&userID)
+		err = h.db.QueryRow(query, req.Login, hashedPassword).Scan(&userID)
 		if err != nil {
 			// Если произошла ошибка уникальности по полю login - выводим соответствующую ошибку
 			var pgErr *pgconn.PgError
@@ -102,6 +87,7 @@ func (h Handler) Register(guard *auth.Guard) func(w http.ResponseWriter, r *http
 			return
 		}
 
+		// Создаём новый токен аутентификации
 		token, expiredAt, err := guard.NewUserToken(userID)
 		if err != nil {
 			h.log.Error(err.Error(), slog.Any("error", err))
@@ -109,6 +95,69 @@ func (h Handler) Register(guard *auth.Guard) func(w http.ResponseWriter, r *http
 			return
 		}
 
+		// Записываем куку в ответ
+		http.SetCookie(w, &http.Cookie{
+			Name:     "jwt",
+			Value:    token,
+			Expires:  expiredAt,
+			Path:     "/",                     // Действие куки распространяется с корня сайта
+			HttpOnly: true,                    // закрывает доступ к куке из JavaScript
+			SameSite: http.SameSiteStrictMode, // защита от CSRF атак
+		})
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":    userID,
+			"login": req.Login,
+		})
+	}
+}
+
+// Login Аутентификация пользователя
+func (h Handler) Login(guard *auth.Guard) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Создаём переменную для данных запроса
+		var req LoginRequest
+
+		// Парсим данные
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Валидируем данные
+		if err := h.validator.Validate(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Хешируем пароль
+		hashedPassword, err := guard.GetHash(req.Password)
+		if err != nil {
+			h.log.Error(err.Error(), slog.Any("error", err))
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		// Добавляем нового пользователя в БД
+		query := `SELECT id FROM users WHERE login = $1 and password = $2`
+
+		var userID string
+		err = h.db.QueryRow(query, req.Login, hashedPassword).Scan(&userID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized) //"Некорректный логин или пароль"
+			return
+		}
+
+		// Создаём новый токен аутентификации
+		token, expiredAt, err := guard.NewUserToken(userID)
+		if err != nil {
+			h.log.Error(err.Error(), slog.Any("error", err))
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		// Записываем куку в ответ
 		http.SetCookie(w, &http.Cookie{
 			Name:     "jwt",
 			Value:    token,

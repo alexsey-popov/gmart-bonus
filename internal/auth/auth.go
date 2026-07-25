@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/jwtauth/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // TokenExpDuration Длительность жизни токена
@@ -23,6 +24,16 @@ func New(secret string) *Guard {
 	return &Guard{
 		jwt: jwtauth.New("HS256", []byte(secret), nil),
 	}
+}
+
+// GetHash Хеширование строки
+func (g Guard) GetHash(s string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(s), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("ошибка при хешировании строки: %w", err)
+	}
+
+	return string(hash), nil
 }
 
 // NewUserToken Создание нового токена пользователя
@@ -77,7 +88,7 @@ func (g Guard) GuestGroup(routes func(r chi.Router)) func(r chi.Router) {
 	}
 }
 
-// AuthMiddleware Группа с доступом только для аутентифицированных пользователей
+// AuthGroup Группа с доступом только для аутентифицированных пользователей
 func (g Guard) AuthGroup(routes func(r chi.Router)) func(r chi.Router) {
 	return func(r chi.Router) {
 		// Ищем токен пользователя и пробрасываем его в контекст

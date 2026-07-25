@@ -57,6 +57,8 @@ func (s Server) ListenAndServe() error {
 			// Регистрация
 			r.Post("/register", h.Register(guard))
 
+			// Аутентификация
+			r.Post("/login", h.Login(guard))
 		},
 	))
 
