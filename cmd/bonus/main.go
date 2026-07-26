@@ -19,6 +19,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
+	"golang.org/x/sync/errgroup"
 )
 
 // main запуск сервиса программы лояльности
@@ -60,19 +61,22 @@ func main() {
 	// Сервер программы лояльности
 	s := server.NewServer(cfg, log, db)
 
+	// Создаём errgroup
+	g, gCtx := errgroup.WithContext(ctx)
+
 	// Запускаем сервер в отдельной горутине
-	go s.ListenAndServe()
+	g.Go(s.ListenAndServe)
 
-	// При появлении сигнала начинаем shutdown
-	<-ctx.Done()
-	log.Info("Получен сигнал shutdown")
+	// Graceful shutdown HTTP-сервера
+	g.Go(func() error {
+		<-gCtx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return s.Shutdown(shutdownCtx)
+	})
 
-	// Даём серверу 10 секунд на завершение текущих запросов
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := s.Shutdown(shutdownCtx); err != nil {
-		log.Info("ошибка при shutdown", slog.Any("error", err))
+	if err := g.Wait(); err != nil {
+		log.Info("завершение с ошибкой", slog.Any("error", err))
 	}
 
 	log.Info("сервер остановлен")
