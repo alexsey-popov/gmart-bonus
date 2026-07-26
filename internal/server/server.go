@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -16,6 +17,7 @@ import (
 
 // Server Объект сервера программы лояльности
 type Server struct {
+	srv *http.Server
 	cfg *config.Config
 	log *slog.Logger
 	db  *sqlx.DB
@@ -24,6 +26,10 @@ type Server struct {
 // New Создание нового сервера
 func NewServer(cfg *config.Config, log *slog.Logger, db *sqlx.DB) Server {
 	return Server{
+		srv: &http.Server{
+			Addr:    cfg.UserAddress,
+			Handler: NewMux(cfg, log, db),
+		},
 		cfg: cfg,
 		log: log,
 		db:  db,
@@ -32,21 +38,33 @@ func NewServer(cfg *config.Config, log *slog.Logger, db *sqlx.DB) Server {
 
 // ListenAndServe Запуск сервера
 func (s Server) ListenAndServe() error {
+	s.log.Info("Запуск сервера программы лояльности по адресу: " + s.cfg.UserAddress)
+
+	if err := s.srv.ListenAndServe(); err != nil {
+		s.log.Error("ошибка в работе сервера: ", slog.Any("error", err))
+		return err
+	}
+
+	return nil
+}
+
+// NewMux Обработчик запросов сервера
+func NewMux(cfg *config.Config, log *slog.Logger, db *sqlx.DB) http.Handler {
 	// Создаём роутер
 	r := chi.NewRouter()
 
 	// Логируем все запросы
-	r.Use(httplog.RequestLogger(s.log, nil))
+	r.Use(httplog.RequestLogger(log, nil))
 
 	// Обрабатываем сжатие для запросов и ответов с Content-Type application/json и text/html
 	compressor := middleware.NewCompressor(5, "application/json", "text/html")
 	r.Use(compressor.Handler)
 
 	// Создаём объект аутентификации
-	guard := auth.New(s.cfg.JwtToken)
+	guard := auth.New(cfg.JwtToken)
 
 	// Создаём обработчик запросов
-	h := handler.New(s.log, s.db)
+	h := handler.New(log, db)
 
 	// Группа роутов только для неавторизированных пользователей
 	r.Group(guard.GuestGroup(
@@ -62,7 +80,10 @@ func (s Server) ListenAndServe() error {
 		},
 	))
 
-	s.log.Info("Запуск сервера программы лояльности по адресу: " + s.cfg.UserAddress)
+	return r
+}
 
-	return http.ListenAndServe(s.cfg.UserAddress, r)
+// Shutdown Завершение работы сервера
+func (s Server) Shutdown(ctx context.Context) error {
+	return s.srv.Shutdown(ctx)
 }

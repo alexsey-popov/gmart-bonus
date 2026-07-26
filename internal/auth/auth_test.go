@@ -41,6 +41,19 @@ func TestNewUserToken(t *testing.T) {
 	assert.Equal(t, userId, val)
 }
 
+// TestCheckPassword Проверка сравнения пароля с хешем
+func TestCheckPassword(t *testing.T) {
+	guard := New("secret")
+	password := "mypassword"
+
+	hash, err := guard.GetHash(password)
+	require.NoError(t, err)
+	assert.NotEmpty(t, hash)
+
+	assert.True(t, guard.CheckPassword(password, hash))
+	assert.False(t, guard.CheckPassword("wrongpassword", hash))
+}
+
 // TestGuestMiddleware Проверка посредника GuestMiddleware (только для неаутентифицированных пользователей)
 func TestGuestMiddleware(t *testing.T) {
 	secret := "secret"

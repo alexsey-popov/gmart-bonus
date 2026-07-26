@@ -3,10 +3,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/config"
 	"github.com/alexsey-popov/gmart-bonus/internal/server"
@@ -49,13 +53,29 @@ func main() {
 		panic(err)
 	}
 
+	// Контекст, который отменится при получении SIGINT или SIGTERM
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	// Сервер программы лояльности
 	s := server.NewServer(cfg, log, db)
 
-	if err = s.ListenAndServe(); err != nil {
-		log.Error(err.Error())
+	// Запускаем сервер в отдельной горутине
+	go s.ListenAndServe()
+
+	// При появлении сигнала начинаем shutdown
+	<-ctx.Done()
+	log.Info("Получен сигнал shutdown")
+
+	// Даём серверу 10 секунд на завершение текущих запросов
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := s.Shutdown(shutdownCtx); err != nil {
+		log.Info("ошибка при shutdown", slog.Any("error", err))
 	}
 
+	log.Info("сервер остановлен")
 }
 
 // migrateUp Выполнение миграций БД
