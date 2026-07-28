@@ -64,14 +64,14 @@ func TestGuestMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})))
 
-	t.Run("GuestMiddleware без токена", func(t *testing.T) {
+	t.Run("positive - GuestMiddleware для неавторизированного пользователя", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code)
 	})
 
-	t.Run("GuestMiddleware с токеном пользователя токена", func(t *testing.T) {
+	t.Run("negative - GuestMiddleware для авторизированного пользователя", func(t *testing.T) {
 		tokenString, _, _ := guard.NewUserToken("user123")
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Authorization", "Bearer "+tokenString)
@@ -100,14 +100,7 @@ func TestAuthGroup(t *testing.T) {
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 
-	t.Run("unauthorized", func(t *testing.T) {
-		resp, err := http.Get(ts.URL + "/protected")
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	})
-
-	t.Run("authorized", func(t *testing.T) {
+	t.Run("positive - AuthGroup для авторизированного пользователя", func(t *testing.T) {
 		tokenString, _, _ := guard.NewUserToken(userId)
 		req, _ := http.NewRequest(http.MethodGet, ts.URL+"/protected", nil)
 		req.Header.Set("Authorization", "Bearer "+tokenString)
@@ -116,6 +109,13 @@ func TestAuthGroup(t *testing.T) {
 		require.NoError(t, err)
 		defer resp.Body.Close()
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("negative - AuthGroup для неавторизированного пользователя", func(t *testing.T) {
+		resp, err := http.Get(ts.URL + "/protected")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
 }
 
@@ -134,14 +134,14 @@ func TestGuestGroup(t *testing.T) {
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 
-	t.Run("no_token", func(t *testing.T) {
+	t.Run("positive - GuestGroup для неавторизированного пользователя", func(t *testing.T) {
 		resp, err := http.Get(ts.URL + "/guest-only")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
 
-	t.Run("with_token", func(t *testing.T) {
+	t.Run("negative - GuestGroup для авторизированного пользователя", func(t *testing.T) {
 		tokenString, _, _ := guard.NewUserToken("user123")
 		req, _ := http.NewRequest(http.MethodGet, ts.URL+"/guest-only", nil)
 		req.Header.Set("Authorization", "Bearer "+tokenString)
