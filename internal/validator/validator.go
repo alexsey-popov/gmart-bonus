@@ -1,4 +1,4 @@
-package handler
+package validator
 
 import (
 	"fmt"
@@ -7,13 +7,13 @@ import (
 
 	"github.com/go-playground/locales/ru"
 	ut "github.com/go-playground/universal-translator"
-	"github.com/go-playground/validator/v10"
+	val "github.com/go-playground/validator/v10"
 	ru_translations "github.com/go-playground/validator/v10/translations/ru"
 )
 
 // Validator Кастомный валидатор с ошибками на русском + подтягиванием полей из тега label
 type Validator struct {
-	validator  *validator.Validate
+	validator  *val.Validate
 	translator ut.Translator
 }
 
@@ -22,7 +22,7 @@ func (v Validator) Validate(item any) error {
 	// Проводим валидацию
 	if err := v.validator.Struct(item); err != nil {
 		// Приводим ошибку к типу validator.ValidationErrors
-		errs, ok := err.(validator.ValidationErrors)
+		errs, ok := err.(val.ValidationErrors)
 		if !ok {
 			return err
 		}
@@ -41,7 +41,7 @@ func (v Validator) Validate(item any) error {
 // NewValidator Создание нового валидатора
 func NewValidator() (*Validator, error) {
 	// Создаём валидатор
-	validate := validator.New()
+	validate := val.New()
 
 	// Указываем, что названия полей нужно брать из тега `label`
 	validate.RegisterTagNameFunc(func(fld reflect.StructField) string {

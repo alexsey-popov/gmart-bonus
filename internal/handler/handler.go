@@ -8,16 +8,19 @@ import (
 	"net/http"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/auth"
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jmoiron/sqlx"
+	"github.com/alexsey-popov/gmart-bonus/internal/config"
+	"github.com/alexsey-popov/gmart-bonus/internal/repository"
+	"github.com/alexsey-popov/gmart-bonus/internal/validator"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httplog/v3"
 )
 
 // Handler Обработчик запросов сервиса программы лояльности
 type Handler struct {
 	log       *slog.Logger
-	db        *sqlx.DB
-	validator *Validator
+	rep       *repository.Repository
+	validator *validator.Validator
 }
 
 // LoginRequest Структура данных для аутентификации пользователя
@@ -27,9 +30,9 @@ type LoginRequest struct {
 }
 
 // New Создание нового обработчика
-func New(log *slog.Logger, db *sqlx.DB) Handler {
+func New(log *slog.Logger, rep *repository.Repository) Handler {
 
-	v, err := NewValidator()
+	v, err := validator.NewValidator()
 	// Ошибка при создании валидатора не является критичной,
 	// поэтому не прокидываем ошибку выше, а просто логируем её
 	if err != nil {
@@ -38,9 +41,41 @@ func New(log *slog.Logger, db *sqlx.DB) Handler {
 
 	return Handler{
 		log:       log,
-		db:        db,
+		rep:       rep,
 		validator: v,
 	}
+}
+
+// GetRouter Обработчик запросов сервера
+func (h Handler) GetRouter(cfg *config.Config) http.Handler {
+	// Создаём роутер
+	r := chi.NewRouter()
+
+	// Логируем все запросы
+	r.Use(httplog.RequestLogger(h.log, nil))
+
+	// Обрабатываем сжатие для запросов и ответов с Content-Type application/json и text/html
+	compressor := middleware.NewCompressor(5, "application/json", "text/html")
+	r.Use(compressor.Handler)
+
+	// Создаём объект аутентификации
+	guard := auth.New(cfg.JwtToken)
+
+	// Группа роутов только для неавторизированных пользователей
+	r.Group(guard.GuestGroup(
+		func(r chi.Router) {
+			// Пропускаем только Content-Type application/json
+			r.Use(middleware.AllowContentType("application/json"))
+
+			// Регистрация
+			r.Post("/register", h.Register(guard))
+
+			// Аутентификация
+			r.Post("/login", h.Login(guard))
+		},
+	))
+
+	return r
 }
 
 // Register Регистрация нового пользователя
@@ -69,20 +104,16 @@ func (h Handler) Register(guard *auth.Guard) func(w http.ResponseWriter, r *http
 			return
 		}
 
-		// Добавляем нового пользователя в БД
-		query := `INSERT INTO users (login, password) VALUES ($1, $2) RETURNING id`
-
-		var userID string
-		err = h.db.QueryRow(query, req.Login, hashedPassword).Scan(&userID)
+		// Создаём нового пользователя
+		userID, err := h.rep.CreateUser(req.Login, hashedPassword)
 		if err != nil {
-			// Если произошла ошибка уникальности по полю login - выводим соответствующую ошибку
-			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation && pgErr.ConstraintName == "idx_users_login_unique" {
+			// Если это ошибка уникальности - выдаём соответствующий код ответа
+			if errors.Is(err, repository.ErrConflictUnique) {
 				http.Error(w, http.StatusText(http.StatusConflict), http.StatusConflict)
 				return
 			}
 
-			h.log.Error("ошибка при создании нового пользователя в БД", slog.Any("error", err))
+			// Если произошла другая ошибка - выдаём сухое сообщение без конкретики
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -105,11 +136,22 @@ func (h Handler) Register(guard *auth.Guard) func(w http.ResponseWriter, r *http
 			SameSite: http.SameSiteStrictMode, // защита от CSRF атак
 		})
 
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		response, err := json.Marshal(map[string]interface{}{
 			"id":    userID,
 			"login": req.Login,
 		})
+		if err != nil {
+			h.log.Error("Ошибка при конвертации ответа в json", slog.Any("error", err))
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, err = w.Write(response)
+
+		if err != nil {
+			h.log.Error("Ошибка записи ответа в ResponseWriter", slog.Any("error", err))
+		}
 	}
 }
 
@@ -131,11 +173,8 @@ func (h Handler) Login(guard *auth.Guard) func(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		// Проверяем наличие пользователя в БД
-		query := `SELECT id, password FROM users WHERE login = $1`
-
-		var userID, storedPassword string
-		err := h.db.QueryRow(query, req.Login).Scan(&userID, &storedPassword)
+		// Получаем данные пользователя по логину
+		userID, storedPassword, err := h.rep.GetUserIdAndPassword(req.Login)
 		if err != nil {
 			http.Error(w, "Некорректный логин или пароль", http.StatusUnauthorized)
 			return
@@ -165,10 +204,20 @@ func (h Handler) Login(guard *auth.Guard) func(w http.ResponseWriter, r *http.Re
 			SameSite: http.SameSiteStrictMode, // защита от CSRF атак
 		})
 
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		response, err := json.Marshal(map[string]interface{}{
 			"id":    userID,
 			"login": req.Login,
 		})
+		if err != nil {
+			h.log.Error("Ошибка при конвертации ответа в json", slog.Any("error", err))
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, err = w.Write(response)
+		if err != nil {
+			h.log.Error("Ошибка записи ответа в ResponseWriter", slog.Any("error", err))
+		}
 	}
 }
