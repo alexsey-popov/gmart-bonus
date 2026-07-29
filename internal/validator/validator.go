@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -19,23 +20,40 @@ type Validator struct {
 
 // Validate Валидация структуры с ошибками на русском языке
 func (v Validator) Validate(item any) error {
-	// Проводим валидацию
-	if err := v.validator.Struct(item); err != nil {
-		// Приводим ошибку к типу validator.ValidationErrors
-		errs, ok := err.(val.ValidationErrors)
-		if !ok {
-			return err
-		}
+	return v.validator.Struct(item)
+}
 
-		// Собираем ошибки на русском языке
-		var messages []string
-		for _, e := range errs {
-			messages = append(messages, e.Translate(v.translator))
-		}
-		return fmt.Errorf("%s", strings.Join(messages, ", "))
+// Перевод ошибок
+func (v Validator) TransErrors(err error) error {
+	// Приводим ошибку к типу validator.ValidationErrors
+	errs, ok := err.(val.ValidationErrors)
+	if !ok {
+		return err
 	}
 
-	return nil
+	// Собираем ошибки на русском языке
+	var messages []string
+	for _, e := range errs {
+		messages = append(messages, e.Translate(v.translator))
+	}
+	return fmt.Errorf("%s", strings.Join(messages, ", "))
+}
+
+// ErrorIs Проверка ошибки на предмет конкретного поля и правила валидации
+func (v Validator) ErrorIs(err error, field, tag string) (bool, error) {
+	// Приводим ошибку к типу validator.ValidationErrors и пытаемся найти совпадение с полем и правилом
+	if errs, ok := err.(val.ValidationErrors); ok {
+		for _, e := range errs {
+			// Проверяем имя поля и сработавшее правило (тег)
+			if e.Field() == field && e.Tag() == tag {
+				return true, nil
+			}
+		}
+
+		return false, nil
+	}
+
+	return false, errors.New("переданная ошибка не соответствует типу ValidationErrors")
 }
 
 // NewValidator Создание нового валидатора
