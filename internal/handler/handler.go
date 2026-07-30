@@ -24,20 +24,19 @@ type Handler struct {
 }
 
 // New Создание нового обработчика
-func New(log *slog.Logger, rep *repository.Repository) Handler {
-
+func New(log *slog.Logger, rep *repository.Repository) (Handler, error) {
+	// Создаём валидатор
 	v, err := validator.NewValidator()
-	// Ошибка при создании валидатора не является критичной,
-	// поэтому не прокидываем ошибку выше, а просто логируем её
 	if err != nil {
 		log.Error(err.Error(), slog.Any("error", err))
+		return Handler{}, err
 	}
 
 	return Handler{
 		log:       log,
 		rep:       rep,
 		validator: v,
-	}
+	}, nil
 }
 
 // GetRouter Обработчик запросов сервера

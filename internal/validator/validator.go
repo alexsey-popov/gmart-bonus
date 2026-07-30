@@ -70,6 +70,14 @@ func NewValidator() (*Validator, error) {
 		return name
 	})
 
+	// Регистрируем правило для проверки строки из чисел по алгоритму Луна
+	err := validate.RegisterValidation("order", func(fl val.FieldLevel) bool {
+		return IsValidLuhn(fl.Field().String())
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ошибка регистрации правила order: %w", err)
+	}
+
 	// Настраиваем локализацию на русский язык
 	ruLocale := ru.New()
 	uni := ut.New(ruLocale, ruLocale)
@@ -81,10 +89,45 @@ func NewValidator() (*Validator, error) {
 	}
 
 	// Регистрируем встроенные русские переводы в валидаторе
-	err := ru_translations.RegisterDefaultTranslations(v.validator, trans)
+	err = ru_translations.RegisterDefaultTranslations(v.validator, trans)
 	if err != nil {
 		return v, fmt.Errorf("ошибка регистрации переводов в валидаторе: %w", err)
 	}
 
 	return v, nil
+}
+
+// IsValidLuhn проверяет корректность строки по алгоритму Луна
+func IsValidLuhn(number string) bool {
+	sum := 0
+	second := false
+
+	// Пустую строку считаем некорректным номером
+	if len(number) == 0 {
+		return false
+	}
+
+	// Идем справа налево
+	for i := len(number) - 1; i >= 0; i-- {
+		char := number[i]
+
+		// Если среди символов есть что-то отличное от чисел - выдаём false
+		if char < '0' || char > '9' {
+			return false
+		}
+
+		val := int(char - '0')
+
+		if second {
+			val *= 2
+			if val > 9 {
+				val -= 9
+			}
+		}
+
+		sum += val
+		second = !second
+	}
+
+	return sum%10 == 0
 }

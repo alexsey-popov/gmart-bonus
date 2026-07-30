@@ -11,7 +11,7 @@ import (
 )
 
 type CreateOrderRequest struct {
-	Order string `validate:"required,credit_card" label:"Номер заказа"`
+	Order string `validate:"required,number,order" label:"Номер заказа"`
 }
 
 // CreateOrder Создание заказа
@@ -37,7 +37,7 @@ func (h Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	if err = h.validator.Validate(request); err != nil {
 		// Проверяем произошла ли ошибка на этапе проверки корректности номера заказа
-		failedLuthn, err2 := h.validator.ErrorIs(err, "Номер заказа", "credit_card")
+		failedLuthn, err2 := h.validator.ErrorIs(err, "Номер заказа", "order")
 		if err2 != nil {
 			h.log.Error("валидатор не смог проверить ошибку на соответствие поля и тега", slog.Any("error", err))
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -86,9 +86,9 @@ func (h Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, err = w.Write(response)
-
 	if err != nil {
 		h.log.Error("Ошибка записи ответа в ResponseWriter", slog.Any("error", err))
 	}

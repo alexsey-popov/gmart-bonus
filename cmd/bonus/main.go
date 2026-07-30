@@ -54,12 +54,18 @@ func main() {
 		panic(err)
 	}
 
+	// Создаём сервер программы лояльности
+	s, err := server.NewServer(cfg, log, db)
+	if err != nil {
+		log.Error("ошибка при подключении к БД",
+			slog.Any("error", err),
+		)
+		panic(err)
+	}
+
 	// Контекст, который отменится при получении SIGINT или SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-
-	// Сервер программы лояльности
-	s := server.NewServer(cfg, log, db)
 
 	// Создаём errgroup
 	g, gCtx := errgroup.WithContext(ctx)
@@ -75,6 +81,7 @@ func main() {
 		return s.Shutdown(shutdownCtx)
 	})
 
+	// Ожидаем завершения всех горутин
 	if err := g.Wait(); err != nil {
 		log.Info("завершение с ошибкой", slog.Any("error", err))
 	}

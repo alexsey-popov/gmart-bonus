@@ -10,10 +10,10 @@ import (
 // В случае ошибки уникальности по полю number возвращается дублирующая запись с ошибкой
 func (rep Repository) CreateOrder(userId, number string) (model.Order, error) {
 	// Создаём модифицированный model.Order
-	// Поле isNew даст нам понять перед нами новая запись или вернулась старая (более подробно в комментарии к запросу)
+	// Поле IsNew даст нам понять перед нами новая запись или вернулась старая (более подробно в комментарии к запросу)
 	order := struct {
 		model.Order
-		isNew bool `db:"is_new"`
+		IsNew bool `db:"is_new"`
 	}{}
 
 	// В рамках одного запроса мы пытаемся создать запись и вернуть все её поля.
@@ -35,7 +35,7 @@ func (rep Repository) CreateOrder(userId, number string) (model.Order, error) {
 	}
 
 	// Если нам вернулась ранее существующая строка - возвращаем её с ошибкой
-	if !order.isNew {
+	if !order.IsNew {
 		return order.Order, ErrConflictUnique
 	}
 
@@ -44,7 +44,7 @@ func (rep Repository) CreateOrder(userId, number string) (model.Order, error) {
 
 // GetUserOrders Получение списка заказов пользователя
 func (rep Repository) GetUserOrders(userId string) (orders []model.Order, err error) {
-	query := `SELECT * FROM orders WHERE user_id = $1`
+	query := `SELECT * FROM orders WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 100 `
 
 	err = rep.db.Select(&orders, query, userId)
 	if err != nil {

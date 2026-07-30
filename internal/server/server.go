@@ -21,12 +21,15 @@ type Server struct {
 }
 
 // New Создание нового сервера
-func NewServer(cfg *config.Config, log *slog.Logger, db *sqlx.DB) Server {
+func NewServer(cfg *config.Config, log *slog.Logger, db *sqlx.DB) (Server, error) {
 	// Создаём репозиторий
 	rep := repository.NewRepository(db, log)
 
 	// Создаём обработчик запросов
-	h := handler.New(log, rep)
+	h, err := handler.New(log, rep)
+	if err != nil {
+		return Server{}, err
+	}
 
 	return Server{
 		srv: &http.Server{
@@ -36,7 +39,7 @@ func NewServer(cfg *config.Config, log *slog.Logger, db *sqlx.DB) Server {
 		cfg: cfg,
 		log: log,
 		rep: rep,
-	}
+	}, nil
 }
 
 // ListenAndServe Запуск сервера
