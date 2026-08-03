@@ -46,7 +46,8 @@ func NewServer(cfg *config.Config, log *slog.Logger, db *sqlx.DB) (Server, error
 func (s Server) ListenAndServe() error {
 	s.log.Info("Запуск сервера программы лояльности по адресу: " + s.cfg.UserAddress)
 
-	if err := s.srv.ListenAndServe(); err != nil {
+	// Штатное завершение работы сервера не считаем ошибкой
+	if err := s.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		s.log.Error("ошибка в работе сервера: ", slog.Any("error", err))
 		return err
 	}

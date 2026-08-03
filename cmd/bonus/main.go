@@ -33,7 +33,7 @@ func main() {
 		log.Error(err.Error(),
 			slog.Any("error", err),
 		)
-		panic(err)
+		os.Exit(1)
 	}
 
 	// Создаём объект взаимодействия с базой
@@ -42,7 +42,7 @@ func main() {
 		log.Error("ошибка при подключении к БД",
 			slog.Any("error", err),
 		)
-		panic(err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
@@ -51,7 +51,7 @@ func main() {
 		log.Error(err.Error(),
 			slog.Any("error", err),
 		)
-		panic(err)
+		os.Exit(1)
 	}
 
 	// Создаём сервер программы лояльности
@@ -60,7 +60,7 @@ func main() {
 		log.Error("ошибка при подключении к БД",
 			slog.Any("error", err),
 		)
-		panic(err)
+		os.Exit(1)
 	}
 
 	// Контекст, который отменится при получении SIGINT или SIGTERM
