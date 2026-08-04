@@ -76,6 +76,9 @@ func (h Handler) GetRouter(cfg *config.Config) http.Handler {
 				r.Post("/orders", h.CreateOrder)
 				// Получение списка заказов
 				r.Get("/orders", h.GetUserOrders)
+
+				// Получение баланса пользователя
+				r.Get("/balance", h.Balance)
 			},
 		))
 	})
