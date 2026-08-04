@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 
@@ -12,11 +13,11 @@ import (
 var ErrConflictUnique = errors.New("ошибка уникальности по полю в БД")
 
 // CreateUser Создание нового пользователя в БД
-func (rep Repository) CreateUser(login, passwordHash string) (userID string, err error) {
+func (rep Repository) CreateUser(ctx context.Context, login, passwordHash string) (userID string, err error) {
 	// Добавляем нового пользователя в БД
 	query := `INSERT INTO users (login, password) VALUES ($1, $2) RETURNING id`
 
-	err = rep.db.QueryRow(query, login, passwordHash).Scan(&userID)
+	err = rep.db.QueryRowContext(ctx, query, login, passwordHash).Scan(&userID)
 	if err != nil {
 		// Если произошла ошибка уникальности по полю login - выводим соответствующую ошибку
 		var pgErr *pgconn.PgError
@@ -33,8 +34,8 @@ func (rep Repository) CreateUser(login, passwordHash string) (userID string, err
 }
 
 // GetUserIdAndPassword Получение id и пароля пользователя по логину
-func (rep Repository) GetUserIdAndPassword(login string) (userID, password string, err error) {
-	err = rep.db.QueryRow("SELECT id, password FROM users WHERE login = $1", login).Scan(&userID, &password)
+func (rep Repository) GetUserIdAndPassword(ctx context.Context, login string) (userID, password string, err error) {
+	err = rep.db.QueryRowContext(ctx, "SELECT id, password FROM users WHERE login = $1", login).Scan(&userID, &password)
 
 	return
 }

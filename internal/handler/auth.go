@@ -43,7 +43,7 @@ func (h Handler) Register(guard *auth.Guard) func(w http.ResponseWriter, r *http
 		}
 
 		// Создаём нового пользователя
-		userID, err := h.rep.CreateUser(req.Login, hashedPassword)
+		userID, err := h.rep.CreateUser(r.Context(), req.Login, hashedPassword)
 		if err != nil {
 			// Если это ошибка уникальности - выдаём соответствующий код ответа
 			if errors.Is(err, repository.ErrConflictUnique) {
@@ -111,7 +111,7 @@ func (h Handler) Login(guard *auth.Guard) func(w http.ResponseWriter, r *http.Re
 		}
 
 		// Получаем данные пользователя по логину
-		userID, storedPassword, err := h.rep.GetUserIdAndPassword(req.Login)
+		userID, storedPassword, err := h.rep.GetUserIdAndPassword(r.Context(), req.Login)
 		if err != nil {
 			http.Error(w, "Некорректный логин или пароль", http.StatusUnauthorized)
 			return

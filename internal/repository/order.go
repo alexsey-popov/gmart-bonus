@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/model"
@@ -8,7 +9,7 @@ import (
 
 // CreateOrder Создание нового заказа.
 // В случае ошибки уникальности по полю number возвращается дублирующая запись с ошибкой
-func (rep Repository) CreateOrder(userId, number string) (model.Order, error) {
+func (rep Repository) CreateOrder(ctx context.Context, userId, number string) (model.Order, error) {
 	// Создаём модифицированный model.Order
 	// Поле IsNew даст нам понять перед нами новая запись или вернулась старая (более подробно в комментарии к запросу)
 	order := struct {
@@ -28,7 +29,7 @@ func (rep Repository) CreateOrder(userId, number string) (model.Order, error) {
 		RETURNING *, (xmax = 0) AS is_new;`
 
 	// Делаем запрос
-	err := rep.db.Get(&order, query, userId, number)
+	err := rep.db.GetContext(ctx, &order, query, userId, number)
 	if err != nil {
 		rep.log.Error("ошибка при создании нового заказа", slog.Any("error", err))
 		return model.Order{}, err
@@ -43,10 +44,10 @@ func (rep Repository) CreateOrder(userId, number string) (model.Order, error) {
 }
 
 // GetUserOrders Получение списка заказов пользователя
-func (rep Repository) GetUserOrders(userId string) (orders []model.Order, err error) {
+func (rep Repository) GetUserOrders(ctx context.Context, userId string) (orders []model.Order, err error) {
 	query := `SELECT * FROM orders WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 100 `
 
-	err = rep.db.Select(&orders, query, userId)
+	err = rep.db.SelectContext(ctx, &orders, query, userId)
 	if err != nil {
 		rep.log.Error("ошибка при получении списка заказов пользователя", slog.Any("error", err))
 	}

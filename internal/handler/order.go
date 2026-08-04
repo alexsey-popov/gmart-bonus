@@ -56,7 +56,7 @@ func (h Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Пытаемся создать заказ
-	order, err := h.rep.CreateOrder(userId, request.Order)
+	order, err := h.rep.CreateOrder(r.Context(), userId, request.Order)
 	if err != nil {
 		// Смотрим является ли ошибка конфликтом уникальности по полю
 		isConflictUnique := errors.Is(err, repository.ErrConflictUnique)
@@ -104,7 +104,7 @@ func (h Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем список заказов
-	orders, err := h.rep.GetUserOrders(userId)
+	orders, err := h.rep.GetUserOrders(r.Context(), userId)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
