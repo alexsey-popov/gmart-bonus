@@ -14,9 +14,11 @@ import (
 
 	"github.com/alexsey-popov/gmart-bonus/internal/config"
 	"github.com/alexsey-popov/gmart-bonus/internal/server"
+	"github.com/alexsey-popov/gmart-bonus/migrations"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/sync/errgroup"
@@ -91,6 +93,12 @@ func main() {
 
 // migrateUp Выполнение миграций БД
 func migrateUp(db *sqlx.DB) error {
+	// 1. Создаем источник на базе вложенных файлов
+	d, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		return fmt.Errorf("ошибка при создании источника файлов миграции: %w", err)
+	}
+
 	// Создаём драйвер для миграций
 	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
 	if err != nil {
@@ -98,9 +106,7 @@ func migrateUp(db *sqlx.DB) error {
 	}
 
 	//   Создаём объект миграции на основе файлов с миграциями и подключения
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"pgx", driver)
+	m, err := migrate.NewWithInstance("iofs", d, "pgx", driver)
 	if err != nil {
 		return fmt.Errorf("ошибка при подготовке к миграций БД: %w", err)
 	}
