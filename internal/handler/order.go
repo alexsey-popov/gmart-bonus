@@ -6,8 +6,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/repository"
+	"github.com/shopspring/decimal"
 )
 
 // Реквест для связи заказа с пользователем
@@ -117,8 +119,25 @@ func (h Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Подготавливаем данные к сериализации (убираем лишние поля, переименновываем некоторые)
+	type responseItem struct {
+		Number     string               `json:"number"`
+		Status     string               `json:"status"`
+		Accrual    *decimal.NullDecimal `json:"accrual,omitempty"`
+		UploadedAt time.Time            `json:"uploaded_at"`
+	}
+	var responseItems []responseItem
+	for _, item := range orders {
+		responseItems = append(responseItems, responseItem{
+			Number:     item.Number,
+			Status:     item.Status,
+			Accrual:    item.Accrual,
+			UploadedAt: item.UploadedAt,
+		})
+	}
+
 	// Создаём json ответ
-	response, err := json.Marshal(orders)
+	response, err := json.Marshal(responseItems)
 	if err != nil {
 		h.log.Error("ошибка при сериализации json", slog.Any("error", err))
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

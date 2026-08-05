@@ -29,7 +29,8 @@ func (rep Repository) GetUserBalance(ctx context.Context, userId string) (balanc
 	return
 }
 
-func (rep Repository) Withdrawal(ctx context.Context, userId, order string, sum decimal.Decimal) (balance model.Balance, err error) {
+// CreateWithdrawal Списание бонусов
+func (rep Repository) CreateWithdrawal(ctx context.Context, userId, order string, sum decimal.Decimal) (balance model.Balance, err error) {
 	// Получаем баланс пользователя
 	balance, err = rep.GetUserBalance(ctx, userId)
 	if err != nil {
@@ -118,4 +119,16 @@ func (rep Repository) Withdrawal(ctx context.Context, userId, order string, sum 
 	}
 
 	return balance, nil
+}
+
+// GetUserOrders Получение списка заказов пользователя
+func (rep Repository) GetUserWithdrawals(ctx context.Context, userId string) (orders []model.Withdrawal, err error) {
+	query := `SELECT * FROM withdrawals WHERE user_id = $1 ORDER BY processed_at DESC LIMIT 100 `
+
+	err = rep.db.SelectContext(ctx, &orders, query, userId)
+	if err != nil {
+		rep.log.Error("ошибка при получении списка списаний пользователя", slog.Any("error", err))
+	}
+
+	return
 }

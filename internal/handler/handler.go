@@ -80,9 +80,11 @@ func (h Handler) GetRouter(cfg *config.Config) http.Handler {
 				// Получение баланса пользователя
 				r.Get("/balance", h.GetUserBalance)
 
-				//POST /api/user/balance/withdraw
+				// Списание бонусов
 				r.Post("/balance/withdraw", h.CreateWithdrawal)
 
+				// История списаний бонусов
+				r.Get("/withdrawals", h.GetUserWithdrawals)
 			},
 		))
 	})
