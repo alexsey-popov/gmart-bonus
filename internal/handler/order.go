@@ -10,11 +10,12 @@ import (
 	"github.com/alexsey-popov/gmart-bonus/internal/repository"
 )
 
+// Реквест для связи заказа с пользователем
 type CreateOrderRequest struct {
 	Order string `validate:"required,number,order" label:"Номер заказа"`
 }
 
-// CreateOrder Создание заказа
+// CreateOrder Связь заказа с пользователем
 func (h Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	// Получаем id пользователя
 	userId, err := h.GetUserId(r)
@@ -51,7 +52,7 @@ func (h Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Прочие ошибки возвращаем пользователю
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, h.validator.TransErrors(err).Error(), http.StatusBadRequest)
 		return
 	}
 
