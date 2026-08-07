@@ -2,9 +2,13 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/model"
+	"github.com/shopspring/decimal"
 )
 
 // CreateOrder Создание нового заказа.
@@ -53,4 +57,89 @@ func (rep Repository) GetUserOrders(ctx context.Context, userId string) (orders 
 	}
 
 	return
+}
+
+// GetUnfinishedOrders Необработанные заказы
+func (rep Repository) GetUnfinishedOrders(ctx context.Context) (orders []model.Order, err error) {
+	query := `SELECT * FROM orders WHERE status = ANY($1) ORDER BY uploaded_at LIMIT 100`
+
+	err = rep.db.SelectContext(ctx, &orders, query, model.UnfinishedOrderStatuses)
+	if err != nil {
+		rep.log.Error("ошибка при получении списка необработанных заказов", slog.Any("error", err))
+	}
+
+	return
+}
+
+// UpdateOrderStatus Обновление статуса наряда
+func (rep Repository) UpdateOrderStatus(
+	ctx context.Context,
+	order model.Order,
+	status model.OrderStatus,
+	accrual *decimal.NullDecimal,
+) (model.Order, error) {
+	// Если статус не изменился - ничего не меняем
+	if order.Status == status {
+		return order, errors.New("статус заказ не изменился")
+	}
+
+	if !slices.Contains(model.UnfinishedOrderStatuses, order.Status) {
+		return order, errors.New("заказ уже находится в окончательном статусе")
+	}
+
+	// начинаем транзакцию
+	tx, err := rep.db.Begin()
+	if err != nil {
+		err = fmt.Errorf("ошибка при создании транзакции :w", err)
+		rep.log.Error(err.Error(), slog.Any("error", err))
+
+		return order, err
+	}
+
+	// Запрос 1 - Обновляем данные заказа в БД
+	query := "UPDATE orders SET status=$1, accrual=$2 where id=$3"
+	_, err = tx.ExecContext(ctx, query, status, accrual, order.Id)
+	if err != nil {
+		if errTx := tx.Rollback(); errTx != nil {
+			rep.log.Error("ошибка при откате транзакции",
+				slog.Any("error", err),
+			)
+		}
+		return order, err
+	}
+
+	// Если заказ успешно обработан и сумма бонусов больше нуля - обновляем баланс пользователя
+	if status == model.OrderStatusProcessed && accrual.Decimal.GreaterThan(decimal.New(0, 0)) {
+		// Запрос 2 - Исправляем баланс пользователя
+		query = `UPDATE users SET current=current+$1 where id=$3`
+		_, err = tx.ExecContext(ctx, query, accrual, order.UserId)
+		if err != nil {
+			rep.log.Error("ошибка при обновлении баланса пользователя",
+				slog.Any("error", err),
+			)
+
+			if errTx := tx.Rollback(); errTx != nil {
+				rep.log.Error("ошибка при откате транзакции",
+					slog.Any("error", err),
+				)
+			}
+
+			return order, err
+		}
+
+		// Применяем транзакцию
+		if errTx := tx.Commit(); errTx != nil {
+			rep.log.Error("ошибка при применении транзакции",
+				slog.Any("error", err),
+			)
+
+			return order, errTx
+		}
+
+		// Обновляем данные в модели
+		order.Status = status
+		order.Accrual = accrual
+	}
+
+	return order, nil
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/alexsey-popov/gmart-bonus/internal/config"
 	"github.com/alexsey-popov/gmart-bonus/internal/handler"
 	"github.com/alexsey-popov/gmart-bonus/internal/repository"
-	"github.com/jmoiron/sqlx"
 )
 
 // Server Объект сервера программы лояльности
@@ -21,10 +20,7 @@ type Server struct {
 }
 
 // New Создание нового сервера
-func NewServer(cfg *config.Config, log *slog.Logger, db *sqlx.DB) (Server, error) {
-	// Создаём репозиторий
-	rep := repository.NewRepository(db, log)
-
+func NewServer(cfg *config.Config, log *slog.Logger, rep *repository.Repository) (Server, error) {
 	// Создаём обработчик запросов
 	h, err := handler.New(log, rep)
 	if err != nil {

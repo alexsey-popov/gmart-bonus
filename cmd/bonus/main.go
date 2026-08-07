@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/config"
+	"github.com/alexsey-popov/gmart-bonus/internal/repository"
 	"github.com/alexsey-popov/gmart-bonus/internal/server"
 	"github.com/alexsey-popov/gmart-bonus/migrations"
 	"github.com/golang-migrate/migrate/v4"
@@ -56,8 +57,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Создаём репозиторий
+	rep := repository.NewRepository(db, log)
+
 	// Создаём сервер программы лояльности
-	s, err := server.NewServer(cfg, log, db)
+	s, err := server.NewServer(cfg, log, rep)
 	if err != nil {
 		log.Error("ошибка при подключении к БД",
 			slog.Any("error", err),
@@ -83,8 +87,13 @@ func main() {
 		return s.Shutdown(shutdownCtx)
 	})
 
+	// Запускаем фоновую заказов
+	g.Go(func() error {
+		return s.LoopOrderProcessing(gCtx)
+	})
+
 	// Ожидаем завершения всех горутин
-	if err := g.Wait(); err != nil {
+	if err = g.Wait(); err != nil {
 		log.Info("завершение с ошибкой", slog.Any("error", err))
 	}
 
