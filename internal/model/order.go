@@ -10,10 +10,17 @@ import (
 type OrderStatus string
 
 const (
-	OrderStatusNew        OrderStatus = "NEW"        // Вознаграждение за заказ рассчитывается
-	OrderStatusProcessing OrderStatus = "PROCESSING" // Вознаграждение за заказ рассчитывается
-	OrderStatusInvalid    OrderStatus = "INVALID"    // Система расчёта вознаграждений отказала в расчёте
-	OrderStatusProcessed  OrderStatus = "PROCESSED"  // Информация о расчёте успешно получена и обработана
+	// OrderStatusNew Вознаграждение за заказ рассчитывается
+	OrderStatusNew OrderStatus = "NEW"
+
+	// OrderStatusProcessing Вознаграждение за заказ рассчитывается
+	OrderStatusProcessing OrderStatus = "PROCESSING"
+
+	// OrderStatusInvalid Система расчёта вознаграждений отказала в расчёте
+	OrderStatusInvalid OrderStatus = "INVALID"
+
+	// OrderStatusProcessed Информация о расчёте успешно получена и обработана
+	OrderStatusProcessed OrderStatus = "PROCESSED"
 )
 
 // Незаконченные статусы заказов

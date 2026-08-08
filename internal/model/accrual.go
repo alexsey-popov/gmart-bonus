@@ -28,7 +28,7 @@ var UnfinishedAccrualOrderStatuses = []AccrualOrderStatus{AccrualOrderStatusRegi
 type AccrualOrder struct {
 	Order   int                  `json:"order"`
 	Status  AccrualOrderStatus   `json:"status"`
-	Accrual *decimal.NullDecimal `json:"accrual"`
+	Accrual *decimal.NullDecimal `json:"accrual,omitempty"`
 }
 
 // GetOrderStatus Получаем статус заказа в зависимости от статуса начисления
@@ -36,7 +36,7 @@ type AccrualOrder struct {
 func (ao AccrualOrder) GetOrderStatus() OrderStatus {
 	switch ao.Status {
 	case AccrualOrderStatusRegistered, AccrualOrderStatusProcessing:
-		return OrderStatusProcessed
+		return OrderStatusProcessing
 	case AccrualOrderStatusInvalid:
 		return OrderStatusInvalid
 	case AccrualOrderStatusProcessed:

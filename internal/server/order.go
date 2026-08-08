@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"time"
@@ -23,7 +24,7 @@ import (
 
 const (
 	// EmptyBatchPause Время ожидания при получении пустой пачки данных
-	EmptyBatchPause = time.Minute
+	EmptyBatchPause = 10 * time.Second
 
 	// CountWorkers Количество обработчиков для startOrderProcessing
 	CountWorkers = 10
@@ -60,6 +61,8 @@ func NewErrWithPause(seconds int) error {
 // LoopOrderProcessing Циклическая обработка заказов (прерывается по контексту)
 func (s Server) LoopOrderProcessing(ctx context.Context) error {
 	for {
+		s.log.Info("Запуск обработки заказов в системе начисления")
+
 		// Если пришла отмена контекста - не начинаем новую обработку
 		if err := ctx.Err(); err != nil {
 			return nil
@@ -93,11 +96,19 @@ func (s Server) LoopOrderProcessing(ctx context.Context) error {
 
 			return err
 		}
+
+		// После каждой пачки записей отдыхаем 10 сек
+		if err = s.pauseOrderProcessing(ctx, EmptyBatchPause); err != nil {
+			return err
+		}
 	}
 }
 
 // pauseOrderProcessing Остановка выполнения обработки на заданное время или до отмены контекста
 func (s Server) pauseOrderProcessing(ctx context.Context, d time.Duration) error {
+	s.log.Info("Пауза в обработке заказов системой начисления",
+		slog.String("duration", d.String()),
+	)
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 
@@ -151,9 +162,14 @@ func (s Server) ActualizeOrder(ctx context.Context, order model.Order) (model.Or
 	}
 
 	// Делаем запрос в систему расчёта бонусов
-	url := s.cfg.AccrualAddress + "/api/orders/" + order.Number
+
+	urlPath, err := url.JoinPath(s.cfg.AccrualAddress, "/api/orders/", order.Number)
+	if err != nil {
+		return order, fmt.Errorf("ошибка при получении эндпоинта системы начисления: %w", err)
+	}
+
 	client := &http.Client{}
-	response, err := client.Get(url)
+	response, err := client.Get(urlPath)
 	if err != nil {
 		return order, fmt.Errorf("ошибка при отправке запроса в систему расчёта бонусов :%w", err)
 	}
@@ -170,7 +186,7 @@ func (s Server) ActualizeOrder(ctx context.Context, order model.Order) (model.Or
 			err = fmt.Errorf("Ошибка при декодировании ответа от системы расчёта бонусов : %w", err)
 
 			s.log.Error(err.Error(),
-				slog.String("url", url),
+				slog.String("url", urlPath),
 			)
 
 			// Ошибку не возвращаем, чтобы не сломать дальнейшую обработку
@@ -193,18 +209,22 @@ func (s Server) ActualizeOrder(ctx context.Context, order model.Order) (model.Or
 			retry = 60
 		}
 
+		s.log.Info("Система начисления вернула Retry-After",
+			slog.Any("retry", retry),
+		)
+
 		return order, NewErrWithPause(retry)
 
 	// Ошибка сервера? - просто логируем. Ошибку не возвращаем для того, чтобы продолжалась обработка
 	case http.StatusInternalServerError:
 		s.log.Info("Ошибка при выполнении запроса в систему расчёта начислений",
-			slog.String("url", url),
+			slog.String("url", urlPath),
 		)
 
 	// Нестандартный код ответа - логируем. Ошибку не возвращаем для того, чтобы продолжалась обработка
 	default:
 		s.log.Error("Систему расчёта начислений вернула нестандартный код ответа",
-			slog.String("url", url),
+			slog.String("url", urlPath),
 			slog.Int("status_code", response.StatusCode),
 		)
 	}

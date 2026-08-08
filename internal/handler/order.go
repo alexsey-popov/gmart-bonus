@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alexsey-popov/gmart-bonus/internal/model"
 	"github.com/alexsey-popov/gmart-bonus/internal/repository"
 	"github.com/shopspring/decimal"
 )
@@ -122,7 +123,7 @@ func (h Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
 	// Подготавливаем данные к сериализации (убираем лишние поля, переименновываем некоторые)
 	type responseItem struct {
 		Number     string               `json:"number"`
-		Status     string               `json:"status"`
+		Status     model.OrderStatus    `json:"status"`
 		Accrual    *decimal.NullDecimal `json:"accrual,omitempty"`
 		UploadedAt time.Time            `json:"uploaded_at"`
 	}

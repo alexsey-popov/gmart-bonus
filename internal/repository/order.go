@@ -109,9 +109,9 @@ func (rep Repository) UpdateOrderStatus(
 	}
 
 	// Если заказ успешно обработан и сумма бонусов больше нуля - обновляем баланс пользователя
-	if status == model.OrderStatusProcessed && accrual.Decimal.GreaterThan(decimal.New(0, 0)) {
+	if status == model.OrderStatusProcessed {
 		// Запрос 2 - Исправляем баланс пользователя
-		query = `UPDATE users SET current=current+$1 where id=$3`
+		query = `UPDATE users SET current=COALESCE(current, 0.00)+COALESCE($1, 0.00)::numeric where id=$2`
 		_, err = tx.ExecContext(ctx, query, accrual, order.UserId)
 		if err != nil {
 			rep.log.Error("ошибка при обновлении баланса пользователя",
@@ -127,18 +127,22 @@ func (rep Repository) UpdateOrderStatus(
 			return order, err
 		}
 
-		// Применяем транзакцию
-		if errTx := tx.Commit(); errTx != nil {
-			rep.log.Error("ошибка при применении транзакции",
-				slog.Any("error", err),
-			)
-
-			return order, errTx
-		}
-
 		// Обновляем данные в модели
 		order.Status = status
 		order.Accrual = accrual
+	}
+
+	rep.log.Info("Успешное обновление статуса в договоре",
+		slog.String("order", order.Number),
+	)
+
+	// Применяем транзакцию
+	if errTx := tx.Commit(); errTx != nil {
+		rep.log.Error("ошибка при применении транзакции",
+			slog.Any("error", err),
+		)
+
+		return order, errTx
 	}
 
 	return order, nil

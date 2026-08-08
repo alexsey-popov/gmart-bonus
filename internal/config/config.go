@@ -20,7 +20,7 @@ const (
 	// Адрес системы расчёта начислений
 	FlagAccrualAddress    = "r"
 	EnvAccrualAddress     = "ACCRUAL_SYSTEM_ADDRESS"
-	DefaultAccrualAddress = "localhost:8081"
+	DefaultAccrualAddress = "http://localhost:8081"
 
 	// Токен проверки аутентификации
 	FlagJwtToken    = "j"
