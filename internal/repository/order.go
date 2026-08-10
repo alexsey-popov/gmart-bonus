@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/model"
+	"github.com/lib/pq"
 	"github.com/shopspring/decimal"
 )
 
@@ -62,7 +63,7 @@ func (rep Repository) GetUserOrders(ctx context.Context, userId string) (orders 
 func (rep Repository) GetUnfinishedOrders(ctx context.Context) (orders []model.Order, err error) {
 	query := `SELECT * FROM orders WHERE status != ALL($1) ORDER BY uploaded_at LIMIT 100`
 
-	err = rep.db.SelectContext(ctx, &orders, query, model.FinalOrderStatuses)
+	err = rep.db.SelectContext(ctx, &orders, query, pq.Array(model.FinalOrderStatuses))
 	if err != nil {
 		rep.log.Error("ошибка при получении списка необработанных заказов", slog.Any("error", err))
 	}
@@ -125,10 +126,6 @@ func (rep Repository) UpdateOrderStatus(
 
 			return order, err
 		}
-
-		// Обновляем данные в модели
-		order.Status = status
-		order.Accrual = accrual
 	}
 
 	rep.log.Info("Успешное обновление статуса в договоре",
@@ -143,6 +140,10 @@ func (rep Repository) UpdateOrderStatus(
 
 		return order, errTx
 	}
+
+	// Обновляем данные в модели
+	order.Status = status
+	order.Accrual = accrual
 
 	return order, nil
 }
