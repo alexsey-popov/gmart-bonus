@@ -1,47 +1,56 @@
 package model
 
 import (
+	"slices"
+
 	"github.com/shopspring/decimal"
 )
 
-// AccrualOrderStatus Статус начисления по заказу
-type AccrualOrderStatus string
+// AccrualStatus Статус начисления по заказу
+type AccrualStatus string
 
 const (
-	// AccrualOrderStatusRegistered Заказ зарегистрирован, но вознаграждение не рассчитано
-	AccrualOrderStatusRegistered AccrualOrderStatus = "REGISTERED"
+	// AccrualStatusRegistered Заказ зарегистрирован, но вознаграждение не рассчитано
+	AccrualStatusRegistered AccrualStatus = "REGISTERED"
 
-	// AccrualOrderStatusProcessing Расчёт начисления в процессе
-	AccrualOrderStatusProcessing AccrualOrderStatus = "PROCESSING"
+	// AccrualStatusProcessing Расчёт начисления в процессе
+	AccrualStatusProcessing AccrualStatus = "PROCESSING"
 
-	// AccrualOrderStatusProcessed Расчёт начисления окончен
-	AccrualOrderStatusProcessed AccrualOrderStatus = "PROCESSED"
+	// AccrualStatusProcessed Расчёт начисления окончен
+	AccrualStatusProcessed AccrualStatus = "PROCESSED"
 
-	// AccrualOrderStatusInvalid Заказ не принят к расчёту, и вознаграждение не будет начислено
-	AccrualOrderStatusInvalid AccrualOrderStatus = "INVALID"
+	// AccrualStatusInvalid Заказ не принят к расчёту, и вознаграждение не будет начислено
+	AccrualStatusInvalid AccrualStatus = "INVALID"
 )
 
-// Незаконченные статусы начисления по заказу
-var UnfinishedAccrualOrderStatuses = []AccrualOrderStatus{AccrualOrderStatusRegistered, AccrualOrderStatusProcessing}
+// GetOrderStatus Получаем статус заказа в зависимости от статуса начисления
+// Если что-то пошло не так - выставляем статус INVALID
+func (accrualStatus AccrualStatus) GetOrderStatus() OrderStatus {
+	orderStatus := OrderStatusInvalid
+
+	switch accrualStatus {
+	case AccrualStatusRegistered, AccrualStatusProcessing:
+		orderStatus = OrderStatusProcessing
+	case AccrualStatusInvalid:
+		orderStatus = OrderStatusInvalid
+	case AccrualStatusProcessed:
+		orderStatus = OrderStatusProcessed
+	}
+
+	return orderStatus
+}
+
+// Окончательные статусы начисления по заказу
+var FinalAccrualStatuses = []AccrualStatus{AccrualStatusProcessed, AccrualStatusInvalid}
+
+// isFinal Является ли статус начисления окончательным
+func (accrualStatus AccrualStatus) IsFinal() bool {
+	return slices.Contains(FinalAccrualStatuses, accrualStatus)
+}
 
 // AccrualOrder Начисление по заказу
 type AccrualOrder struct {
 	Order   int                  `json:"order"`
-	Status  AccrualOrderStatus   `json:"status"`
+	Status  AccrualStatus        `json:"status"`
 	Accrual *decimal.NullDecimal `json:"accrual,omitempty"`
-}
-
-// GetOrderStatus Получаем статус заказа в зависимости от статуса начисления
-// Если что-то пошло не так - выставляем статус INVALID
-func (ao AccrualOrder) GetOrderStatus() OrderStatus {
-	switch ao.Status {
-	case AccrualOrderStatusRegistered, AccrualOrderStatusProcessing:
-		return OrderStatusProcessing
-	case AccrualOrderStatusInvalid:
-		return OrderStatusInvalid
-	case AccrualOrderStatusProcessed:
-		return OrderStatusProcessed
-	}
-
-	return OrderStatusInvalid
 }

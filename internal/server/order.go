@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"strconv"
 	"time"
 
@@ -157,7 +156,7 @@ func (s Server) startOrderProcessing(ctx context.Context, rep *repository.Reposi
 // Actualize Актуализация данных из системы расчёта бонусов
 func (s Server) ActualizeOrder(ctx context.Context, order model.Order) (model.Order, error) {
 	// Если заказ находится в конечных статусах - просто возвращаем его обратно
-	if !slices.Contains(model.UnfinishedOrderStatuses, order.Status) {
+	if order.Status.IsFinal() {
 		return order, nil
 	}
 
@@ -194,7 +193,7 @@ func (s Server) ActualizeOrder(ctx context.Context, order model.Order) (model.Or
 		}
 
 		// Получаем статус заказа и обновляем его в базу
-		status := accrual.GetOrderStatus()
+		status := accrual.Status.GetOrderStatus()
 		s.rep.UpdateOrderStatus(ctx, order, status, accrual.Accrual)
 
 	// Номер заказа не зарегистрирован в системе расчёта бонусов - такие заказы сразу переводим в INVALID

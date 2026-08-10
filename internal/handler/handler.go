@@ -2,29 +2,42 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/auth"
 	"github.com/alexsey-popov/gmart-bonus/internal/config"
-	"github.com/alexsey-popov/gmart-bonus/internal/repository"
+	"github.com/alexsey-popov/gmart-bonus/internal/model"
 	"github.com/alexsey-popov/gmart-bonus/internal/validator"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httplog/v3"
 	"github.com/go-chi/jwtauth/v5"
+	"github.com/shopspring/decimal"
 )
+
+// Repository Интерфейс репозитория, используемый обработчиком
+type Repository interface {
+	CreateUser(ctx context.Context, login, passwordHash string) (userID string, err error)
+	GetUserIdAndPassword(ctx context.Context, login string) (userID, password string, err error)
+	GetUserBalance(ctx context.Context, userId string) (balance model.Balance, err error)
+	CreateWithdrawal(ctx context.Context, userId, order string, sum decimal.Decimal) (balance model.Balance, err error)
+	GetUserWithdrawals(ctx context.Context, userId string) (withdrawals []model.Withdrawal, err error)
+	CreateOrder(ctx context.Context, userId, number string) (model.Order, error)
+	GetUserOrders(ctx context.Context, userId string) (orders []model.Order, err error)
+}
 
 // Handler Обработчик запросов сервиса программы лояльности
 type Handler struct {
 	log       *slog.Logger
-	rep       *repository.Repository
+	rep       Repository
 	validator *validator.Validator
 }
 
 // New Создание нового обработчика
-func New(log *slog.Logger, rep *repository.Repository) (Handler, error) {
+func New(log *slog.Logger, rep Repository) (Handler, error) {
 	// Создаём валидатор
 	v, err := validator.NewValidator()
 	if err != nil {

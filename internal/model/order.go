@@ -1,6 +1,7 @@
 package model
 
 import (
+	"slices"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -23,8 +24,13 @@ const (
 	OrderStatusProcessed OrderStatus = "PROCESSED"
 )
 
-// Незаконченные статусы заказов
-var UnfinishedOrderStatuses = []OrderStatus{OrderStatusNew, OrderStatusProcessing}
+// Окончательные статусы заказов
+var FinalOrderStatuses = []OrderStatus{OrderStatusProcessed, OrderStatusInvalid}
+
+// IsFinal Является ли статус окончательным
+func (orderStatus OrderStatus) IsFinal() bool {
+	return slices.Contains(FinalOrderStatuses, orderStatus)
+}
 
 // Order Заказ
 type Order struct {

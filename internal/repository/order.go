@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/model"
 	"github.com/shopspring/decimal"
@@ -61,9 +60,9 @@ func (rep Repository) GetUserOrders(ctx context.Context, userId string) (orders 
 
 // GetUnfinishedOrders Необработанные заказы
 func (rep Repository) GetUnfinishedOrders(ctx context.Context) (orders []model.Order, err error) {
-	query := `SELECT * FROM orders WHERE status = ANY($1) ORDER BY uploaded_at LIMIT 100`
+	query := `SELECT * FROM orders WHERE status != ALL($1) ORDER BY uploaded_at LIMIT 100`
 
-	err = rep.db.SelectContext(ctx, &orders, query, model.UnfinishedOrderStatuses)
+	err = rep.db.SelectContext(ctx, &orders, query, model.FinalOrderStatuses)
 	if err != nil {
 		rep.log.Error("ошибка при получении списка необработанных заказов", slog.Any("error", err))
 	}
@@ -83,14 +82,14 @@ func (rep Repository) UpdateOrderStatus(
 		return order, errors.New("статус заказ не изменился")
 	}
 
-	if !slices.Contains(model.UnfinishedOrderStatuses, order.Status) {
+	if order.Status.IsFinal() {
 		return order, errors.New("заказ уже находится в окончательном статусе")
 	}
 
 	// начинаем транзакцию
 	tx, err := rep.db.Begin()
 	if err != nil {
-		err = fmt.Errorf("ошибка при создании транзакции :w", err)
+		err = fmt.Errorf("ошибка при создании транзакции %w", err)
 		rep.log.Error(err.Error(), slog.Any("error", err))
 
 		return order, err
