@@ -39,7 +39,6 @@ func (rep Repository) CreateWithdrawal(ctx context.Context, userId, order string
 
 	// Если у пользователя на счёте меньше баллов, чем он хочет списать - выдаём ошибку "Недостаточно средств"
 	if balance.Current.LessThan(sum) {
-		rep.log.Info("WWW", slog.String("C", balance.Current.String()), slog.String("S", sum.String()))
 		return balance, ErrInsufficientFunds
 	}
 

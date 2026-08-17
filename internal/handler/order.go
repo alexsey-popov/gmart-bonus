@@ -62,18 +62,18 @@ func (h Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	// Пытаемся создать заказ
 	order, err := h.rep.CreateOrder(r.Context(), userId, request.Order)
 	if err != nil {
-		// Смотрим является ли ошибка конфликтом уникальности по полю
-		isConflictUnique := errors.Is(err, repository.ErrConflictUnique)
 
-		// Если это конфликт уникальности и user_id совпадает - выдаём статус 200
-		if isConflictUnique && order.UserId == userId {
-			http.Error(w, "Номер заказа уже был загружен этим пользователем", http.StatusOK)
-			return
-		}
-
-		// Если это конфликт уникальности и user_id не совпадает - выдаём статус 409
-		if isConflictUnique && order.UserId != userId {
-			http.Error(w, "Номер заказа уже был загружен другим пользователем", http.StatusConflict)
+		// Если произошла ошибка конфликтом уникальности по полю -
+		// выводим ответ в зависимости от значения order.UserId
+		if errors.Is(err, repository.ErrConflictUnique) {
+			switch order.UserId {
+			case userId:
+				http.Error(w, "Номер заказа уже был загружен этим пользователем", http.StatusOK)
+			case "":
+				http.Error(w, "Номер заказа уже был загружен неизвестным пользователем", http.StatusConflict)
+			default:
+				http.Error(w, "Номер заказа уже был загружен другим пользователем", http.StatusConflict)
+			}
 			return
 		}
 

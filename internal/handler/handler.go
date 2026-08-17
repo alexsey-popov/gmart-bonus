@@ -37,15 +37,15 @@ type Handler struct {
 }
 
 // New Создание нового обработчика
-func New(log *slog.Logger, rep Repository) (Handler, error) {
+func New(log *slog.Logger, rep Repository) (*Handler, error) {
 	// Создаём валидатор
 	v, err := validator.NewValidator()
 	if err != nil {
 		log.Error(err.Error(), slog.Any("error", err))
-		return Handler{}, err
+		return &Handler{}, err
 	}
 
-	return Handler{
+	return &Handler{
 		log:       log,
 		rep:       rep,
 		validator: v,

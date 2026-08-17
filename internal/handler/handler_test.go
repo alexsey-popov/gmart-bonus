@@ -18,7 +18,7 @@ import (
 )
 
 // newTestHandler Создание обработчика для тестов с подменённым репозиторием
-func newTestHandler(t *testing.T, rep Repository) Handler {
+func newTestHandler(t *testing.T, rep Repository) *Handler {
 	t.Helper()
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
