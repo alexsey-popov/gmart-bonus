@@ -4,7 +4,7 @@ CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     number VARCHAR(255) NOT NULL,
-    status VARCHAR(255) NOT NULL DEFAULT 'new',
+    status VARCHAR(255) NOT NULL DEFAULT 'NEW',
     accrual numeric(10, 2) NULL,
     uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

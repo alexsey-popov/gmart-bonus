@@ -4,17 +4,31 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"iter"
 	"log/slog"
 	"net/http"
+	"slices"
+	"time"
 
+	"github.com/alexsey-popov/gmart-bonus/internal/model"
 	"github.com/alexsey-popov/gmart-bonus/internal/repository"
+	"github.com/shopspring/decimal"
 )
 
+// Реквест для связи заказа с пользователем
 type CreateOrderRequest struct {
 	Order string `validate:"required,number,order" label:"Номер заказа"`
 }
 
-// CreateOrder Создание заказа
+// Данные заказа в формате для пользователя
+type OrderDTO struct {
+	Number     string               `json:"number"`
+	Status     model.OrderStatus    `json:"status"`
+	Accrual    *decimal.NullDecimal `json:"accrual,omitempty"`
+	UploadedAt time.Time            `json:"uploaded_at"`
+}
+
+// CreateOrder Связь заказа с пользователем
 func (h Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	// Получаем id пользователя
 	userId, err := h.GetUserId(r)
@@ -51,25 +65,25 @@ func (h Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Прочие ошибки возвращаем пользователю
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, h.validator.TransErrors(err).Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Пытаемся создать заказ
-	order, err := h.rep.CreateOrder(userId, request.Order)
+	order, err := h.rep.CreateOrder(r.Context(), userId, request.Order)
 	if err != nil {
-		// Смотрим является ли ошибка конфликтом уникальности по полю
-		isConflictUnique := errors.Is(err, repository.ErrConflictUnique)
 
-		// Если это конфликт уникальности и user_id совпадает - выдаём статус 200
-		if isConflictUnique && order.UserId == userId {
-			http.Error(w, "Номер заказа уже был загружен этим пользователем", http.StatusOK)
-			return
-		}
-
-		// Если это конфликт уникальности и user_id не совпадает - выдаём статус 409
-		if isConflictUnique && order.UserId != userId {
-			http.Error(w, "Номер заказа уже был загружен другим пользователем", http.StatusConflict)
+		// Если произошла ошибка конфликтом уникальности по полю -
+		// выводим ответ в зависимости от значения order.UserId
+		if errors.Is(err, repository.ErrConflictUnique) {
+			switch order.UserId {
+			case userId:
+				http.Error(w, "Номер заказа уже был загружен этим пользователем", http.StatusOK)
+			case "":
+				http.Error(w, "Номер заказа уже был загружен неизвестным пользователем", http.StatusConflict)
+			default:
+				http.Error(w, "Номер заказа уже был загружен другим пользователем", http.StatusConflict)
+			}
 			return
 		}
 
@@ -104,7 +118,7 @@ func (h Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем список заказов
-	orders, err := h.rep.GetUserOrders(userId)
+	orders, err := h.rep.GetUserOrders(r.Context(), userId)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -116,8 +130,23 @@ func (h Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Преобразуем []model.Order в []OrderDTO через итератор
+	responseItems := slices.Collect(
+		Map(
+			slices.Values(orders),
+			func(item model.Order) OrderDTO {
+				return OrderDTO{
+					Number:     item.Number,
+					Status:     item.Status,
+					Accrual:    item.Accrual,
+					UploadedAt: item.UploadedAt,
+				}
+			},
+		),
+	)
+
 	// Создаём json ответ
-	response, err := json.Marshal(orders)
+	response, err := json.Marshal(responseItems)
 	if err != nil {
 		h.log.Error("ошибка при сериализации json", slog.Any("error", err))
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -129,5 +158,16 @@ func (h Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
 	_, err = w.Write(response)
 	if err != nil {
 		h.log.Error("Ошибка записи ответа в ResponseWriter", slog.Any("error", err))
+	}
+}
+
+// Map преобразует iter.Seq[V1] в iter.Seq[V2] с помощью функции transform
+func Map[V1, V2 any](seq iter.Seq[V1], transform func(V1) V2) iter.Seq[V2] {
+	return func(yield func(V2) bool) {
+		for v := range seq {
+			if !yield(transform(v)) {
+				return
+			}
+		}
 	}
 }

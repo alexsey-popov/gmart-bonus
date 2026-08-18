@@ -1,14 +1,23 @@
 package repository
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/model"
+	"github.com/lib/pq"
+	"github.com/shopspring/decimal"
 )
+
+var ErrStatusNotChanged error = errors.New("статус заказ не изменился")
+
+var ErrStatusIsFinal error = errors.New("заказ уже находится в окончательном статусе")
 
 // CreateOrder Создание нового заказа.
 // В случае ошибки уникальности по полю number возвращается дублирующая запись с ошибкой
-func (rep Repository) CreateOrder(userId, number string) (model.Order, error) {
+func (rep Repository) CreateOrder(ctx context.Context, userId, number string) (model.Order, error) {
 	// Создаём модифицированный model.Order
 	// Поле IsNew даст нам понять перед нами новая запись или вернулась старая (более подробно в комментарии к запросу)
 	order := struct {
@@ -28,7 +37,7 @@ func (rep Repository) CreateOrder(userId, number string) (model.Order, error) {
 		RETURNING *, (xmax = 0) AS is_new;`
 
 	// Делаем запрос
-	err := rep.db.Get(&order, query, userId, number)
+	err := rep.db.GetContext(ctx, &order, query, userId, number)
 	if err != nil {
 		rep.log.Error("ошибка при создании нового заказа", slog.Any("error", err))
 		return model.Order{}, err
@@ -43,13 +52,102 @@ func (rep Repository) CreateOrder(userId, number string) (model.Order, error) {
 }
 
 // GetUserOrders Получение списка заказов пользователя
-func (rep Repository) GetUserOrders(userId string) (orders []model.Order, err error) {
+func (rep Repository) GetUserOrders(ctx context.Context, userId string) (orders []model.Order, err error) {
 	query := `SELECT * FROM orders WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 100 `
 
-	err = rep.db.Select(&orders, query, userId)
+	orders, err = NewGenericRepository[model.Order](rep.db, rep.log).FindAll(ctx, query, userId)
 	if err != nil {
 		rep.log.Error("ошибка при получении списка заказов пользователя", slog.Any("error", err))
 	}
 
 	return
+}
+
+// GetUnfinishedOrders Необработанные заказы
+func (rep Repository) GetUnfinishedOrders(ctx context.Context) (orders []model.Order, err error) {
+	query := `SELECT * FROM orders WHERE status != ALL($1) ORDER BY uploaded_at LIMIT 100`
+
+	orders, err = NewGenericRepository[model.Order](rep.db, rep.log).FindAll(ctx, query, pq.Array(model.FinalOrderStatuses))
+	if err != nil {
+		rep.log.Error("ошибка при получении списка необработанных заказов", slog.Any("error", err))
+	}
+
+	return
+}
+
+// UpdateOrderStatus Обновление статуса наряда
+func (rep Repository) UpdateOrderStatus(
+	ctx context.Context,
+	order model.Order,
+	status model.OrderStatus,
+	accrual *decimal.NullDecimal,
+) (model.Order, error) {
+	// Если статус не изменился - ничего не меняем
+	if order.Status == status {
+		return order, ErrStatusNotChanged
+	}
+
+	if order.Status.IsFinal() {
+		return order, ErrStatusIsFinal
+	}
+
+	// начинаем транзакцию
+	tx, err := rep.db.Begin()
+	if err != nil {
+		err = fmt.Errorf("ошибка при создании транзакции %w", err)
+		rep.log.Error(err.Error(), slog.Any("error", err))
+
+		return order, err
+	}
+
+	// Запрос 1 - Обновляем данные заказа в БД
+	query := "UPDATE orders SET status=$1, accrual=$2 where id=$3"
+	_, err = tx.ExecContext(ctx, query, status, accrual, order.Id)
+	if err != nil {
+		if errTx := tx.Rollback(); errTx != nil {
+			rep.log.Error("ошибка при откате транзакции",
+				slog.Any("error", err),
+			)
+		}
+		return order, err
+	}
+
+	// Если заказ успешно обработан и сумма бонусов больше нуля - обновляем баланс пользователя
+	if status == model.OrderStatusProcessed {
+		// Запрос 2 - Исправляем баланс пользователя
+		query = `UPDATE users SET current=COALESCE(current, 0.00)+COALESCE($1, 0.00)::numeric where id=$2`
+		_, err = tx.ExecContext(ctx, query, accrual, order.UserId)
+		if err != nil {
+			rep.log.Error("ошибка при обновлении баланса пользователя",
+				slog.Any("error", err),
+			)
+
+			if errTx := tx.Rollback(); errTx != nil {
+				rep.log.Error("ошибка при откате транзакции",
+					slog.Any("error", err),
+				)
+			}
+
+			return order, err
+		}
+	}
+
+	rep.log.Info("Успешное обновление статуса в договоре",
+		slog.String("order", order.Number),
+	)
+
+	// Применяем транзакцию
+	if errTx := tx.Commit(); errTx != nil {
+		rep.log.Error("ошибка при применении транзакции",
+			slog.Any("error", err),
+		)
+
+		return order, errTx
+	}
+
+	// Обновляем данные в модели
+	order.Status = status
+	order.Accrual = accrual
+
+	return order, nil
 }
