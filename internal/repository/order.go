@@ -55,7 +55,7 @@ func (rep Repository) CreateOrder(ctx context.Context, userId, number string) (m
 func (rep Repository) GetUserOrders(ctx context.Context, userId string) (orders []model.Order, err error) {
 	query := `SELECT * FROM orders WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 100 `
 
-	err = rep.db.SelectContext(ctx, &orders, query, userId)
+	orders, err = NewGenericRepository[model.Order](rep.db, rep.log).FindAll(ctx, query, userId)
 	if err != nil {
 		rep.log.Error("ошибка при получении списка заказов пользователя", slog.Any("error", err))
 	}
@@ -67,7 +67,7 @@ func (rep Repository) GetUserOrders(ctx context.Context, userId string) (orders 
 func (rep Repository) GetUnfinishedOrders(ctx context.Context) (orders []model.Order, err error) {
 	query := `SELECT * FROM orders WHERE status != ALL($1) ORDER BY uploaded_at LIMIT 100`
 
-	err = rep.db.SelectContext(ctx, &orders, query, pq.Array(model.FinalOrderStatuses))
+	orders, err = NewGenericRepository[model.Order](rep.db, rep.log).FindAll(ctx, query, pq.Array(model.FinalOrderStatuses))
 	if err != nil {
 		rep.log.Error("ошибка при получении списка необработанных заказов", slog.Any("error", err))
 	}

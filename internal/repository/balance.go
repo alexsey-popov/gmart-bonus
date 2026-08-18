@@ -18,7 +18,7 @@ var ErrInsufficientFunds = errors.New("Недостаточно средств")
 func (rep Repository) GetUserBalance(ctx context.Context, userId string) (balance model.Balance, err error) {
 	query := `SELECT current, withdrawn FROM users WHERE id = $1 LIMIT 1`
 
-	err = rep.db.QueryRowContext(ctx, query, userId).Scan(&balance.Current, &balance.Withdrawn)
+	balance, err = NewGenericRepository[model.Balance](rep.db, rep.log).FindOne(ctx, query, userId)
 	if err != nil {
 		rep.log.Error("ошибка при получении баланса пользователя",
 			slog.Any("error", err),
@@ -120,11 +120,11 @@ func (rep Repository) CreateWithdrawal(ctx context.Context, userId, order string
 	return balance, nil
 }
 
-// GetUserOrders Получение списка заказов пользователя
+// GetUserWithdrawals Получение списка списаний пользователя
 func (rep Repository) GetUserWithdrawals(ctx context.Context, userId string) (orders []model.Withdrawal, err error) {
 	query := `SELECT * FROM withdrawals WHERE user_id = $1 ORDER BY processed_at DESC LIMIT 100 `
 
-	err = rep.db.SelectContext(ctx, &orders, query, userId)
+	orders, err = NewGenericRepository[model.Withdrawal](rep.db, rep.log).FindAll(ctx, query, userId)
 	if err != nil {
 		rep.log.Error("ошибка при получении списка списаний пользователя", slog.Any("error", err))
 	}
