@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"iter"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/model"
@@ -16,6 +18,14 @@ import (
 // Реквест для связи заказа с пользователем
 type CreateOrderRequest struct {
 	Order string `validate:"required,number,order" label:"Номер заказа"`
+}
+
+// Данные заказа в формате для пользователя
+type OrderDTO struct {
+	Number     string               `json:"number"`
+	Status     model.OrderStatus    `json:"status"`
+	Accrual    *decimal.NullDecimal `json:"accrual,omitempty"`
+	UploadedAt time.Time            `json:"uploaded_at"`
 }
 
 // CreateOrder Связь заказа с пользователем
@@ -120,22 +130,20 @@ func (h Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Подготавливаем данные к сериализации (убираем лишние поля, переименновываем некоторые)
-	type responseItem struct {
-		Number     string               `json:"number"`
-		Status     model.OrderStatus    `json:"status"`
-		Accrual    *decimal.NullDecimal `json:"accrual,omitempty"`
-		UploadedAt time.Time            `json:"uploaded_at"`
-	}
-	var responseItems []responseItem
-	for _, item := range orders {
-		responseItems = append(responseItems, responseItem{
-			Number:     item.Number,
-			Status:     item.Status,
-			Accrual:    item.Accrual,
-			UploadedAt: item.UploadedAt,
-		})
-	}
+	// Преобразуем []model.Order в []OrderDTO через итератор
+	responseItems := slices.Collect(
+		Map(
+			slices.Values(orders),
+			func(item model.Order) OrderDTO {
+				return OrderDTO{
+					Number:     item.Number,
+					Status:     item.Status,
+					Accrual:    item.Accrual,
+					UploadedAt: item.UploadedAt,
+				}
+			},
+		),
+	)
 
 	// Создаём json ответ
 	response, err := json.Marshal(responseItems)
@@ -150,5 +158,16 @@ func (h Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
 	_, err = w.Write(response)
 	if err != nil {
 		h.log.Error("Ошибка записи ответа в ResponseWriter", slog.Any("error", err))
+	}
+}
+
+// Map преобразует iter.Seq[V1] в iter.Seq[V2] с помощью функции transform
+func Map[V1, V2 any](seq iter.Seq[V1], transform func(V1) V2) iter.Seq[V2] {
+	return func(yield func(V2) bool) {
+		for v := range seq {
+			if !yield(transform(v)) {
+				return
+			}
+		}
 	}
 }
