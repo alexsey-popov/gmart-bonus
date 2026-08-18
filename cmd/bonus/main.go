@@ -13,10 +13,13 @@ import (
 	"time"
 
 	"github.com/alexsey-popov/gmart-bonus/internal/config"
+	"github.com/alexsey-popov/gmart-bonus/internal/repository"
 	"github.com/alexsey-popov/gmart-bonus/internal/server"
+	"github.com/alexsey-popov/gmart-bonus/migrations"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/sync/errgroup"
@@ -33,7 +36,7 @@ func main() {
 		log.Error(err.Error(),
 			slog.Any("error", err),
 		)
-		panic(err)
+		os.Exit(1)
 	}
 
 	// Создаём объект взаимодействия с базой
@@ -42,7 +45,7 @@ func main() {
 		log.Error("ошибка при подключении к БД",
 			slog.Any("error", err),
 		)
-		panic(err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
@@ -51,16 +54,19 @@ func main() {
 		log.Error(err.Error(),
 			slog.Any("error", err),
 		)
-		panic(err)
+		os.Exit(1)
 	}
 
+	// Создаём репозиторий
+	rep := repository.NewRepository(db, log)
+
 	// Создаём сервер программы лояльности
-	s, err := server.NewServer(cfg, log, db)
+	s, err := server.NewServer(cfg, log, rep)
 	if err != nil {
 		log.Error("ошибка при подключении к БД",
 			slog.Any("error", err),
 		)
-		panic(err)
+		os.Exit(1)
 	}
 
 	// Контекст, который отменится при получении SIGINT или SIGTERM
@@ -81,8 +87,13 @@ func main() {
 		return s.Shutdown(shutdownCtx)
 	})
 
+	// Запускаем фоновую заказов
+	g.Go(func() error {
+		return s.LoopOrderProcessing(gCtx)
+	})
+
 	// Ожидаем завершения всех горутин
-	if err := g.Wait(); err != nil {
+	if err = g.Wait(); err != nil {
 		log.Info("завершение с ошибкой", slog.Any("error", err))
 	}
 
@@ -91,6 +102,12 @@ func main() {
 
 // migrateUp Выполнение миграций БД
 func migrateUp(db *sqlx.DB) error {
+	// 1. Создаем источник на базе вложенных файлов
+	d, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		return fmt.Errorf("ошибка при создании источника файлов миграции: %w", err)
+	}
+
 	// Создаём драйвер для миграций
 	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
 	if err != nil {
@@ -98,9 +115,7 @@ func migrateUp(db *sqlx.DB) error {
 	}
 
 	//   Создаём объект миграции на основе файлов с миграциями и подключения
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"pgx", driver)
+	m, err := migrate.NewWithInstance("iofs", d, "pgx", driver)
 	if err != nil {
 		return fmt.Errorf("ошибка при подготовке к миграций БД: %w", err)
 	}

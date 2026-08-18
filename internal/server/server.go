@@ -9,7 +9,6 @@ import (
 	"github.com/alexsey-popov/gmart-bonus/internal/config"
 	"github.com/alexsey-popov/gmart-bonus/internal/handler"
 	"github.com/alexsey-popov/gmart-bonus/internal/repository"
-	"github.com/jmoiron/sqlx"
 )
 
 // Server Объект сервера программы лояльности
@@ -21,10 +20,7 @@ type Server struct {
 }
 
 // New Создание нового сервера
-func NewServer(cfg *config.Config, log *slog.Logger, db *sqlx.DB) (Server, error) {
-	// Создаём репозиторий
-	rep := repository.NewRepository(db, log)
-
+func NewServer(cfg *config.Config, log *slog.Logger, rep *repository.Repository) (Server, error) {
 	// Создаём обработчик запросов
 	h, err := handler.New(log, rep)
 	if err != nil {
@@ -46,7 +42,8 @@ func NewServer(cfg *config.Config, log *slog.Logger, db *sqlx.DB) (Server, error
 func (s Server) ListenAndServe() error {
 	s.log.Info("Запуск сервера программы лояльности по адресу: " + s.cfg.UserAddress)
 
-	if err := s.srv.ListenAndServe(); err != nil {
+	// Штатное завершение работы сервера не считаем ошибкой
+	if err := s.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		s.log.Error("ошибка в работе сервера: ", slog.Any("error", err))
 		return err
 	}
