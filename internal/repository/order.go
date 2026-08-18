@@ -11,6 +11,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+var ErrStatusNotChanged error = errors.New("статус заказ не изменился")
+
+var ErrStatusIsFinal error = errors.New("заказ уже находится в окончательном статусе")
+
 // CreateOrder Создание нового заказа.
 // В случае ошибки уникальности по полю number возвращается дублирующая запись с ошибкой
 func (rep Repository) CreateOrder(ctx context.Context, userId, number string) (model.Order, error) {
@@ -80,11 +84,11 @@ func (rep Repository) UpdateOrderStatus(
 ) (model.Order, error) {
 	// Если статус не изменился - ничего не меняем
 	if order.Status == status {
-		return order, errors.New("статус заказ не изменился")
+		return order, ErrStatusNotChanged
 	}
 
 	if order.Status.IsFinal() {
-		return order, errors.New("заказ уже находится в окончательном статусе")
+		return order, ErrStatusIsFinal
 	}
 
 	// начинаем транзакцию

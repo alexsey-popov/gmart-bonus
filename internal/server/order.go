@@ -194,11 +194,27 @@ func (s Server) ActualizeOrder(ctx context.Context, order model.Order) (model.Or
 
 		// Получаем статус заказа и обновляем его в базу
 		status := accrual.Status.GetOrderStatus()
-		s.rep.UpdateOrderStatus(ctx, order, status, accrual.Accrual)
+		order, err = s.rep.UpdateOrderStatus(ctx, order, status, accrual.Accrual)
+		// Если ошибка "Статус заказа не изменился" - не логируем
+		if err != nil && !errors.Is(err, repository.ErrStatusNotChanged) {
+			// Ошибку просто логируем и не прокидываем выше, чтобы не останавливать обработку
+			s.log.Error("Ошибка при обновлении статуса заказа",
+				slog.Any("order", order),
+				slog.Any("accrual", accrual),
+				slog.Any("error", err),
+			)
+		}
 
 	// Номер заказа не зарегистрирован в системе расчёта бонусов - такие заказы сразу переводим в INVALID
 	case http.StatusNoContent:
-		s.rep.UpdateOrderStatus(ctx, order, model.OrderStatusInvalid, &decimal.NullDecimal{})
+		order, err = s.rep.UpdateOrderStatus(ctx, order, model.OrderStatusInvalid, &decimal.NullDecimal{})
+		if err != nil {
+			// Ошибку просто логируем и не прокидываем выше, чтобы не останавливать обработку
+			s.log.Error("Ошибка при обновлении статуса заказа в случае StatusNoContent от accrual",
+				slog.Any("order", order),
+				slog.Any("error", err),
+			)
+		}
 
 	// Превышен лимит запросов? - нужно остановить обработку на указанное в Retry-After количество секунд
 	case http.StatusTooManyRequests:
